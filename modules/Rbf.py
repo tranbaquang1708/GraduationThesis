@@ -23,18 +23,48 @@ def solve_w_func(dataset, offset=1, func=None):
   b[2*num_on_points:3*num_on_points] = offset
   return scipy.linalg.solve(A,b) # Solve linear equation A.x = b
 
+def grid(X, Y, Z=None):
+  # Grid for 2d
+  xmin = np.min(X)
+  xmax = np.max(X)
+  ymin = np.min(Y)
+  ymax = np.max(Y)
+  dx = xmax - xmin
+  dy = ymax - ymin
+  # Slightly increase the grid by ed along each x and y direction
+  if Z is None:
+    ed = 0.1*np.sqrt(dx*dx+dy*dy)
+  else:
+    zmin = np.min(Z)
+    zmax = np.max(Z)
+    dz = zmax - zmin
+    ed = 0.1 * np.sqrt(dx*dx+dy*dy+dz*dz)
+  # Grid resolution
+  resx = 50
+  resy = 50
+  x = np.arange(xmin-ed, xmax+ed, (dx+2*ed)/float(resx))
+  y = np.arange(ymin-ed, ymax+ed, (dy+2*ed)/float(resy))
+  if Z is None:
+    return np.meshgrid(x, y, sparse=False)
+  else:
+    resz = 50
+    z = np.arange(zmin-ed, zmax+ed, (zz+2*ed)/float(resz))
+    return np.meshgrid(x,y,z, sparse=False)
 
-def sampling(dataset, xx, yy, w, func=None):
+def sampling(dataset, w, xx, yy, zz=None, func=None):
   # Default RBF: Linear
   if func == None:
-    func = Rbf.linear
+    func = linear
   dimw = w.shape
   dimg = xx.shape
   z = np.zeros(dimg)
-  for k in range(int(dimw[0])):
-    z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2))
+  if zz is None:
+    for k in range(int(dimw[0])):
+      z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2))
+  else:
+    for k in range(int(dimw[0])):
+      z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2 + (zz-dataset[k,2]**2)))
   return z
-
 
 def linear(r):
   return r
@@ -44,11 +74,11 @@ def thin_plate(r):
   return (r*r*ma.log(r)).filled(0)
 
 
-def gen_from_txt(filename, dim=3, offset=0.01):
-  onsurface_points = np.zeros((0,dim))
-  shifted_points = np.zeros((0,dim)) # onsurface_points left shifted by 1
-  first_point = np.zeros((1,dim))
-  last_point = np.zeros((1,dim))
+def gen_from_txt2(filename, offset=0.01):
+  onsurface_points = np.zeros((0,2))
+  shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
+  first_point = np.zeros((1,2))
+  last_point = np.zeros((1,2))
 
   with open(filename, 'r') as f:
     for c in range(int(f.readline())):
@@ -67,9 +97,7 @@ def gen_from_txt(filename, dim=3, offset=0.01):
       if np.not_equal(last_point,first_point).any():
         onsurface_points = np.concatenate((onsurface_points,last_point))    # Onsurface: last_point
         shifted_points = np.concatenate((shifted_points,last_point))        # Shifted: last_point
-      else:
-        num_of_verticles[c] = num_of_verticles[c]-1
-      shifted_points = np.concatenate((shifted_points,first_point))         # shifted_first_point
+      shifted_points = np.concatenate((shifted_points,first_point))         # Shifted: first_point
 
   # Vector of 2 consecutive points
   vectors = shifted_points - onsurface_points
@@ -77,9 +105,8 @@ def gen_from_txt(filename, dim=3, offset=0.01):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  if dim == 2:
-    normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
-    normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
 
   # Generate off surface point
   inside_points = onsurface_points - offset*normal_vectors
@@ -90,24 +117,8 @@ def gen_from_txt(filename, dim=3, offset=0.01):
   dataset = np.concatenate((onsurface_points, inside_points, outside_points), axis=0)
   return dataset,normal_vectors
 
-def meshgrid(dataset):
-  xmin = np.min(dataset[:,0])
-  xmax = np.max(dataset[:,0])
-  ymin = np.min(dataset[:,1])
-  ymax = np.max(dataset[:,1])
-  dx = xmax - xmin
-  dy = ymax - ymin
-  # Slightly increase the grid by ed along each x and y direction
-  ed = 0.1*np.sqrt(dx*dx+dy*dy)
-  # Grid resolution
-  resx = 50
-  resy = 50
-  x = np.arange(xmin-ed, xmax+ed, (dx+2*ed)/float(resx))
-  y = np.arange(ymin-ed, ymax+ed, (dy+2*ed)/float(resy))
-  return np.meshgrid(x, y, sparse=False)
-
-
-def visualize(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, offsurface=True, filled_contour=True):
+def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, offsurface=True, filled_contour=True):
+  # Visualize for 2D
   num_on_points = int(len(dataset)/3)
   # Scatter plot for points
   if scatter:
