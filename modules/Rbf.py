@@ -6,6 +6,8 @@ from scipy import linalg
 import matplotlib.pyplot as plt
 from numpy import *
 from scipy.spatial.distance import squareform,pdist
+from skimage import measure
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
 def solve_w_func(dataset, offset=1, func=None):
@@ -48,7 +50,7 @@ def grid(X, Y, Z=None):
     return np.meshgrid(x, y, sparse=False)
   else:
     resz = 50
-    z = np.arange(zmin-ed, zmax+ed, (zz+2*ed)/float(resz))
+    z = np.arange(zmin-ed, zmax+ed, (dz+2*ed)/float(resz))
     return np.meshgrid(x,y,z, sparse=False)
 
 def sampling(dataset, w, xx, yy, zz=None, func=None):
@@ -63,7 +65,7 @@ def sampling(dataset, w, xx, yy, zz=None, func=None):
       z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2))
   else:
     for k in range(int(dimw[0])):
-      z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2 + (zz-dataset[k,2]**2)))
+      z += w[k] * func(np.sqrt((xx - dataset[k,0])**2 + (yy - dataset[k,1])**2 + (zz-dataset[k,2])**2))
   return z
 
 def linear(r):
@@ -117,6 +119,17 @@ def gen_from_txt2(filename, offset=0.01):
   dataset = np.concatenate((onsurface_points, inside_points, outside_points), axis=0)
   return dataset,normal_vectors
 
+def gen_from_txt3(filename, offset=0.01):
+  with open(filename, 'r') as f:
+    raw_data = np.loadtxt(f)
+  onsurface, vectors = np.hsplit(raw_data, 2)
+  norm = np.linalg.norm(vectors, axis=0)
+  normal_vectors = vectors/norm
+  inside = onsurface - offset * normal_vectors
+  outside = onsurface + offset * normal_vectors
+  dataset = np.concatenate((onsurface, inside, outside))
+  return dataset, normal_vectors
+
 def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, offsurface=True, filled_contour=True):
   # Visualize for 2D
   num_on_points = int(len(dataset)/3)
@@ -145,4 +158,30 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
   if filled_contour:
     hf = plt.contourf(xx,yy,z)
     hf.ax.axis('equal')
+    plt.show()
+
+def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=True):
+  num_onsurface = int(len(dataset)/3)
+  if scatter:
+    fig = plt.figure(figsize=(10,10))
+    ax_points = fig.add_subplot(111, projection='3d')
+    ax_points.scatter(dataset[0:num_onsurface,0], dataset[num_onsurface:2*num_onsurface,1], dataset[2*num_onsurface:3*num_onsurface,2])
+    plt.show()
+  if vecfield:
+    fig = plt.figure(figsize=(10,10))
+    ax_vecfield = fig.add_subplot(111, projection='3d')
+    ax_vecfield.quiver(dataset[0:num_onsurface,0], dataset[num_onsurface:2*num_onsurface,1], dataset[2*num_onsurface:3*num_onsurface,2], 
+                       normal_vectors[:,0], normal_vectors[:,1], normal_vectors[:,2])
+    plt.show()
+  if surface:
+    verts, faces, normals, values = measure.marching_cubes_lewiner(z, 0)
+    fig = plt.figure(figsize=(10,10))
+    ax_surface = fig.add_subplot(111, projection='3d')
+    mesh = Poly3DCollection(verts[faces])
+    mesh.set_edgecolor('k')
+    ax_surface.add_collection3d(mesh)
+    ax_surface.set_xlim(0, 50)
+    ax_surface.set_ylim(0, 50)
+    ax_surface.set_zlim(0, 50)
+    plt.tight_layout()
     plt.show()
