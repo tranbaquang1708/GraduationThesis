@@ -38,10 +38,33 @@ class IGRPerceptron(nn.Module):
     out = self.fc_last(out)
     return out
 
-# Compute Eikonal term
-def eikonal(nn, distribution):
-  out = nn(distribution).sum().backward()
-  return F.normalize(distribution.grad)
+# Uniform distribution
+def uniform_distribution(model, batch_points, device, ld):
+  xmin = torch.min(batch_points[:,0]).item()
+  xmax = torch.max(batch_points[:,0]).item()
+  ymin = torch.min(batch_points[:,1]).item()
+  ymax = torch.max(batch_points[:,1]).item()
+
+  dist_min = torch.ones(batch_points.size()).to(device)
+  dist_min[:,0] = dist_min[:,0] * xmin
+  dist_min[:,1] = dist_min[:,1] * ymin
+
+  dist_max = torch.ones(batch_points.size()).to(device)
+  dist_max[:,0] = dist_max[:,0] * xmax
+  dist_max[:,1] = dist_max[:,1] * ymax
+
+  uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
+  dist = uniform.sample().to(device)
+
+  dist = torch.autograd.Variable(dist, requires_grad=True)
+  dist.to(device)
+  f = model(dist)
+  g = torch.autograd.grad(outputs=f, inputs=dist,
+                    grad_outputs=torch.ones(f.size()).to(device),
+                    create_graph=True, retain_graph=True,
+                    only_inputs=True)[0]
+
+  return ld*((g.norm(2, dim=1) - 1).sum())**2
 
 # Compute gradient of function with respect to the input
 def compute_grad(result, dataset, normal_vectors):
@@ -52,42 +75,51 @@ def compute_grad(result, dataset, normal_vectors):
   return torch.reshape(out, (out.shape[0], 1))
 
 # Compute loss
-# loss = \sum_I (w^T*x_i)^2 + 0.1 * (||w||^2 - 1)^2
-def irg_loss(nn, result, data, normal_vectors, tau=1):
-  loss_out = torch.mean(torch.abs(result))
-  loss_grad = torch.mean(tau * compute_grad(result, data, normal_vectors))
-  return loss_out + loss_grad
-
-def irg_loss2(nn, result, dataset, normal_vectors, device, tau=1):
+def irg_loss(model, result, batch_points, batch_normal_vectors, device, tau, ld, constrain_function=None):
   geo_loss = torch.mean(torch.abs(result))
 
-  x = torch.autograd.Variable(dataset, requires_grad=True)
+  x = torch.autograd.Variable(batch_points, requires_grad=True)
   x = x.to(device)
-  f = nn(x)
+  f = model(x)
   g = torch.autograd.grad(outputs=f, inputs=x, 
                     grad_outputs=torch.ones(f.size()).to(device), 
                     create_graph=True, retain_graph=True, 
                     only_inputs=True)[0]
-  grad_loss = (g - normal_vectors).norm(2, dim=1).mean()
+  grad_loss = (g - batch_normal_vectors).norm(2, dim=1).mean()
 
+  if constrain_function is None:
+    constrain = 0
+  else:
+    constrain = constrain_function(model, batch_points, device, ld)
   return geo_loss + tau*grad_loss
 
-def train(dataset, normal_vectors, num_epochs, device, model=None):
+def to_batch(dataset, normal_vectors, batch_size):
+  if len(dataset) > batch_size:
+    indices = torch.randperm(len(dataset))[:batch_size]
+    return dataset[indices], normal_vectors[indices]
+  else:
+    return dataset, normal_vectors
+
+def train(dataset, normal_vectors, num_epochs, batch_size, device, tau=1, ld=0.1, model=None, constrain_function=None):
   if model is None:
     model = IGRPerceptron()
     model = model.to(device)
     
   optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-  for i in range(num_epochs): 
-    result =  model(dataset)
-    loss = irg_loss2(model, result, dataset, normal_vectors, device, tau=1)
+  for i in range(num_epochs):
+    batch_point, batch_normal_vectors  = to_batch(dataset, normal_vectors, batch_size)
+    result =  model(batch_point)
+    loss = irg_loss(model, result, batch_point, batch_normal_vectors, device, tau, ld,constrain_function)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
     if (i+1)%500 == 0:
       print("Step " + str(i+1) + ":")
       print(loss)
+
+  if num_epochs == 1:
+    print(loss)
     
   return model
 
