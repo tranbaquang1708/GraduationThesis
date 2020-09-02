@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import math
 import os
+from modules import Distance
 
 # Neural network model
 class IGRPerceptron(nn.Module):
@@ -38,42 +39,6 @@ class IGRPerceptron(nn.Module):
     out = self.fc_last(out)
     return out
 
-# Uniform distribution
-def uniform_distribution(model, batch_points, device, ld):
-  xmin = torch.min(batch_points[:,0]).item()
-  xmax = torch.max(batch_points[:,0]).item()
-  ymin = torch.min(batch_points[:,1]).item()
-  ymax = torch.max(batch_points[:,1]).item()
-
-  dist_min = torch.ones(batch_points.size()).to(device)
-  dist_min[:,0] = dist_min[:,0] * xmin
-  dist_min[:,1] = dist_min[:,1] * ymin
-
-  dist_max = torch.ones(batch_points.size()).to(device)
-  dist_max[:,0] = dist_max[:,0] * xmax
-  dist_max[:,1] = dist_max[:,1] * ymax
-
-  uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
-  dist = uniform.sample().to(device)
-
-  dist = torch.autograd.Variable(dist, requires_grad=True)
-  dist.to(device)
-  f = model(dist)
-  g = torch.autograd.grad(outputs=f, inputs=dist,
-                    grad_outputs=torch.ones(f.size()).to(device),
-                    create_graph=True, retain_graph=True,
-                    only_inputs=True)[0]
-
-  return ld*((g.norm(2, dim=1) - 1).sum())**2
-
-# Compute gradient of function with respect to the input
-def compute_grad(result, dataset, normal_vectors):
-  data = dataset.detach().clone()
-  data.requires_grad = True
-  g = torch.autograd.grad(result.sum(), dataset, retain_graph=True)[0].data
-  out = torch.norm(g - normal_vectors, dim=1)
-  return torch.reshape(out, (out.shape[0], 1))
-
 # Compute loss
 def irg_loss(model, result, batch_points, batch_normal_vectors, device, tau, ld, constrain_function=None):
   geo_loss = torch.mean(torch.abs(result))
@@ -90,8 +55,9 @@ def irg_loss(model, result, batch_points, batch_normal_vectors, device, tau, ld,
   if constrain_function is None:
     constrain = 0
   else:
-    constrain = constrain_function(model, batch_points, device, ld)
-  return geo_loss + tau*grad_loss
+    constrain = constrain_function(model, batch_points, device)
+
+  return geo_loss + tau*grad_loss + ld * constrain
 
 def to_batch(dataset, normal_vectors, batch_size):
   if len(dataset) > batch_size:
@@ -122,6 +88,55 @@ def train(dataset, normal_vectors, num_epochs, batch_size, device, tau=1, ld=0.1
     print(loss)
     
   return model
+
+# Uniform distribution
+def uniform_distribution(model, batch_points, device):
+  xmin = torch.min(batch_points[:,0]).item()
+  xmax = torch.max(batch_points[:,0]).item()
+  ymin = torch.min(batch_points[:,1]).item()
+  ymax = torch.max(batch_points[:,1]).item()
+
+  dist_min = torch.ones(batch_points.size()).to(device)
+  dist_min[:,0] = dist_min[:,0] * xmin
+  dist_min[:,1] = dist_min[:,1] * ymin
+
+  dist_max = torch.ones(batch_points.size()).to(device)
+  dist_max[:,0] = dist_max[:,0] * xmax
+  dist_max[:,1] = dist_max[:,1] * ymax
+
+  uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
+  dist = uniform.sample().to(device)
+
+  x = torch.autograd.Variable(dist, requires_grad=True)
+  x.to(device)
+  f = model(x)
+  g = torch.autograd.grad(outputs=f, inputs=x, 
+                    grad_outputs=torch.ones(f.size()).to(device), 
+                    create_graph=True, retain_graph=True, 
+                    only_inputs=True)[0]
+
+  return ((g.norm(2, dim=1) - 1).mean())**2
+
+# def eikonal_term(model, batch_points, device):
+#   # Uniform distribution
+#   xmin = torch.min(batch_points[:,0]).item()
+#   xmax = torch.max(batch_points[:,0]).item()
+#   ymin = torch.min(batch_points[:,1]).item()
+#   ymax = torch.max(batch_points[:,1]).item()
+
+#   dist_min = torch.ones(batch_points.size()).to(device)
+#   dist_min[:,0] = dist_min[:,0] * xmin
+#   dist_min[:,1] = dist_min[:,1] * ymin
+
+#   dist_max = torch.ones(batch_points.size()).to(device)
+#   dist_max[:,0] = dist_max[:,0] * xmax
+#   dist_max[:,1] = dist_max[:,1] * ymax
+
+#   uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
+#   uniform_dist = uniform.sample().to(device)
+
+  # Sum of Gaussian
+  
 
 # Save trained data
 def save_model(path, model):
