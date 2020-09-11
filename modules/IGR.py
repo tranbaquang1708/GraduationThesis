@@ -76,8 +76,7 @@ def train(dataset, normal_vectors, num_epochs, batch_size, device, tau=1, ld=0.1
   for i in range(num_epochs):
     batch_point, batch_normal_vectors  = to_batch(dataset, normal_vectors, batch_size)
     result =  model(batch_point)
-    loss = irg_loss(model, result, batch_point, batch_normal_vectors, device, tau, ld,constrain_function)
-    optimizer.zero_grad()
+    loss = irg_loss(model, result, batch_point, batch_normal_vectors, device, tau, ld,constrain_function)    optimizer.zero_grad()
     loss.backward()
     optimizer.step()
     if (i+1)%500 == 0:
@@ -183,7 +182,6 @@ def sampling(nn, xx, yy):
   tt = torch.reshape(tt, (dimg,2))
   z = nn(tt)
   print(torch.reshape(z, (50,50)))
-
   return torch.reshape(z, (50,50))
 
 # Read text file and output dataset tensor and normal_vectors tensor
