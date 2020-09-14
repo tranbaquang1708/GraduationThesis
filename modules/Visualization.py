@@ -8,27 +8,21 @@ import math
 # PLOT
 
 # Visualization for 2D dataset
-def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, offsurface=True, filled_contour=True):
+def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, filled_contour=True):
   # Visualize for 2D
-  num_on_points = int(len(dataset)/3)
   # Scatter plot for points
   if scatter:
     h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
     plt.show()
   # Plot vector field
   if vecfield:
-    h_vector = plt.quiver(dataset[0:num_on_points,0], dataset[0:num_on_points,1], normal_vectors[:,0], normal_vectors[:,1])
+    h_vector = plt.quiver(dataset[:,0], dataset[:,1], normal_vectors[:,0], normal_vectors[:,1])
     h_vector.ax.axis('equal')
     plt.show()
   # Plot generated surface
   if surface:
     h_object = plt.contour(xx,yy, z, levels=[0.0], colors='c')
     h_object.ax.axis('equal')
-    plt.show()
-  # Plot generated surface for on surface and off surface points
-  if offsurface:
-    h_with_offsurface = plt.contour(xx,yy, z, levels=[-0.1, 0.0, 0.1])
-    h_with_offsurface.ax.axis('equal')
     plt.show()
   # Plot filled contour
   if filled_contour:
@@ -38,6 +32,12 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
 
 def scatter_plot(dataset):
   h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
+  plt.show()
+
+def loss_graph(i, value):
+  plt.plot(i, value)
+  plt.xlabel('Epoch')
+  plt.ylabel('Loss value')
   plt.show()
 
 # Visualization for 3D dataset
