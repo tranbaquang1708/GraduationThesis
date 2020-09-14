@@ -1,7 +1,13 @@
 import matplotlib.pyplot as plt
 from skimage import measure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import torch
+import math
 
+#-------------------------------------------------------
+# PLOT
+
+# Visualization for 2D dataset
 def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, offsurface=True, filled_contour=True):
   # Visualize for 2D
   num_on_points = int(len(dataset)/3)
@@ -30,6 +36,11 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
     hf.ax.axis('equal')
     plt.show()
 
+def scatter_plot(dataset):
+  h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
+  plt.show()
+
+# Visualization for 3D dataset
 def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=True):
   if scatter:
     fig = plt.figure(figsize=(10,10))
@@ -54,3 +65,41 @@ def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=
     ax_surface.set_zlim(0, 50)
     plt.tight_layout()
     plt.show()
+
+#----------------------------------------------------------------------
+# GRID
+
+# Create a grid from torch tensot
+def grid_from_torch(X, Y, device):
+  xmin = torch.min(X).item()
+  xmax = torch.max(X).item()
+  ymin = torch.min(Y).item()
+  ymax = torch.max(Y).item()
+
+  dx = xmax - xmin
+  dy = ymax - ymin
+
+  resx = 50
+  resy = 50
+
+  ed = 0.1*math.sqrt(dx*dx+dy*dy)
+
+  x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
+  y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
+
+  xx, yy = torch.meshgrid(x, y)
+  return xx.to(device), yy.to(device)
+
+#-------------------------------------------------------------------------
+# SAMPLING
+
+# Neural Network as function
+def nn_sampling(nn, xx, yy):
+  dimg = (xx.shape[0])**2
+  z = torch.empty((0,1))
+  tt = torch.stack((xx, yy), axis=2)
+  tt = torch.reshape(tt, (dimg,2))
+  z = nn(tt)
+  print(torch.reshape(z, (50,50)))
+
+  return torch.reshape(z, (50,50))
