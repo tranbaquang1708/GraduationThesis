@@ -62,8 +62,12 @@ def circle_dataset(device):
   d.requires_grad = True
 
   # Normal vectors
-  d_shifted = torch.roll(d, 1, 0)
-  n = d_shifted - d
-  n = f.normalize(n, p=2, dim=1)
+  d_shifted = torch.roll(d, -1, 0)
+  v = d_shifted - d
+  v = f.normalize(v, p=2, dim=1)
+  # n = torch.zeros_like(v, requires_grad=True)
+  n = torch.zeros_like(v)
+  n[:,0] = -v[:,1]
+  n[:,1] = v[:,0]
 
-  return d,n
+  return d.to(device),n.to(device)
