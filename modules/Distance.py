@@ -4,7 +4,7 @@ def pdist_squareform(in_tensor, function=None):
   if function is None:
     function = Distance.euclidean_distance
   size0 = in_tensor.size()[0]
-  x = in_tensor.unsqueeze(0).expand(3,3,2)
+  x = in_tensor.unsqueeze(0).expand(size0,size0,2)
   y = x.transpose(0,1)
   return function(x,y)
 
