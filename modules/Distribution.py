@@ -29,23 +29,19 @@ def gaussian_kth(points, device):
   d.to(device)
   d_50 = d[:].topk(50, largest=False)
   std = d_50.values[:,-1].reshape((points.size()[0], 1))
-  std = torch.cat((std, std), dim=1)
+  # std = torch.cat((std, std), dim=1)
   std.to(device)
 
-  # Mean
-  mean = points.mean(dim=0)
-
   # Gaussian
-  g = 1 / (std * math.sqrt(2 * math.pi)) * torch.exp(-((points - mean) / (2 * std)) ** 2)
-  g = g.sum(dim=0)
-  g.to(device)
+  g = torch.distributions.normal.Normal(points, std)
+  g = g.sample()
 
   return g
 
 # The average of a uniform distribution and a sum of Gaussians centered 
 # at X with standard deviation equal to the distance to the k-th nearest 
 # neighbor (we used k = 50)
-def uniform_gaussian_distribution2(points, device):
+def uniform_gaussian(points, device):
   u = uniform_distribution(points, device)
   g = gaussian_kth(points, device)
 
