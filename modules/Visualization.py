@@ -30,8 +30,8 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
     hf.ax.axis('equal')
     plt.show()
 
-def scatter_plot(dataset):
-  h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
+def scatter_plot(points):
+  h_points = plt.scatter(points[:,0], points[:,1], s=2)
   plt.show()
 
 def loss_graph(i, value):
@@ -70,7 +70,7 @@ def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=
 # GRID
 
 # Create a grid from torch tensot
-def grid_from_torch(X, Y, device):
+def grid_from_torch(X, Y, resx=50, resy=50, device='cpu'):
   xmin = torch.min(X).item()
   xmax = torch.max(X).item()
   ymin = torch.min(Y).item()
@@ -79,8 +79,8 @@ def grid_from_torch(X, Y, device):
   dx = xmax - xmin
   dy = ymax - ymin
 
-  resx = 50
-  resy = 50
+  # resx = 50
+  # resy = 100
 
   ed = 0.1*math.sqrt(dx*dx+dy*dy)
 
@@ -88,18 +88,42 @@ def grid_from_torch(X, Y, device):
   y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
 
   xx, yy = torch.meshgrid(x, y)
+
   return xx.to(device), yy.to(device)
 
 #-------------------------------------------------------------------------
 # SAMPLING
 
 # Neural Network as function
-def nn_sampling(nn, xx, yy):
-  dimg = (xx.shape[0])**2
+def nn_sampling(model, xx, yy, device='cpu'):
+  # Evaluate function on each grid point
+  resx = xx.shape[0]
+  resy = yy.shape[1]
+  dimg = resx * resy
   z = torch.empty((0,1))
   tt = torch.stack((xx, yy), axis=2)
+  # print(tt.size())
   tt = torch.reshape(tt, (dimg,2))
-  z = nn(tt)
-  print(torch.reshape(z, (50,50)))
+  z = model(tt)
+  print("Value of function on each grid point")
+  print(torch.reshape(z, (resx,resy)))
 
-  return torch.reshape(z, (50,50))
+  # Compute grad on each grid point
+  x = torch.autograd.Variable(tt, requires_grad=True)
+  x = x.to(device)
+  f = model(x)
+  g = torch.autograd.grad(outputs=f, inputs=x, 
+                      grad_outputs=torch.ones(f.size()).to(device), 
+                      create_graph=True, retain_graph=True, 
+                      only_inputs=True)[0]
+
+  print()
+  print("Grad on each grid point")
+  g = torch.norm(g, dim=-1)
+  print(torch.reshape(g, (resx, resy)))
+  # print("Number of elements outside the range [-1.3, 1.3]: " + str((g>1.3).sum() + (g<-1.3).sum()))
+  print("Minimum value: " + str(torch.min(g).item()))
+  print("Maximum value: " + str(torch.max(g).item()))
+  # print("Number of elements outside [0.7,1.3]: " + str(((g<0.7).sum() + (g>1.3).sum()).item()) + "/" + str(g.shape[0]))
+
+  return torch.reshape(z, (resx,resy))
