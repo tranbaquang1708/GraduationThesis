@@ -5,17 +5,29 @@ The reconstructed surface is defined implicitly in the form {(x,y,z) \in R^3: f(
 
 ## List of model
 
-### No constrain
+### No constraint
 
-Trained without any constrain
+Trained without any constraint
 
-Syntax: filename_noconstrain.traineddata (e.g. circle_noconstrain.trainneddata, riderr_noconstrain.traineddata)
+Syntax: filename_noconstraint.traineddata (e.g. circle_noconstrain.trainneddata, riderr_noconstrain.traineddata)
 
 ### Uniform
 
 Trained with uniform distribution
 
 Syntax: filename_uniform.traineddata
+
+### Dense Uniform
+
+Traned with uniform distribution in which the sample points are denser in the middle
+
+Syntax: filename_dense_uniform.traineddata
+
+### Gaussian
+
+Trained with Gaussian distribution
+
+Syntax: filename_gaussian.traineddata
 
 ### Uniform - Gaussian
 
