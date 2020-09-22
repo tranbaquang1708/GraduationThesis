@@ -22,6 +22,41 @@ def uniform_distribution(points, device):
 
   return dist
 
+def dense_uniform(points, device):
+  half1 = int(points.shape[0]/2)
+  half2 = points.shape[0] - half1
+
+  xmin = torch.min(points[:,0]).item()
+  xmax = torch.max(points[:,0]).item()
+  ymin = torch.min(points[:,1]).item()
+  ymax = torch.max(points[:,1]).item()
+  dx = xmax - xmin
+  dy = ymax - ymin
+
+  dist_min1 = torch.ones((half1, 2)).to(device)
+  dist_min1[:,0] = dist_min1[:,0] * (xmin + 0.25*dx)
+  dist_min1[:,1] = dist_min1[:,1] * (ymin + 0.25*dy)
+
+  dist_max1 = torch.ones((half1, 2)).to(device)
+  dist_max1[:,0] = dist_max1[:,0] * (xmax - 0.25*dx)
+  dist_max1[:,1] = dist_max1[:,1] * (ymax - 0.25*dy)
+
+  dist_min2 = torch.ones((half1, 2)).to(device)
+  dist_min2[:,0] = dist_min2[:,0] * xmin
+  dist_min2[:,1] = dist_min2[:,1] * ymin
+
+  dist_max2 = torch.ones((half1, 2)).to(device)
+  dist_max2[:,0] = dist_max2[:,0] * xmax
+  dist_max2[:,1] = dist_max2[:,1] * ymax
+
+  dist_min = torch.cat((dist_min1, dist_min2))
+  dist_max = torch.cat((dist_max1, dist_max2))
+
+  uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
+  dist = uniform.sample().to(device)
+
+  return dist
+
 def gaussian_kth(points, device):
   # Standart deviation
   k = 50
