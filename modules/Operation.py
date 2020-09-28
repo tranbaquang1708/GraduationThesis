@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as f
+import random
 
 # --------------------------------------------------------------------------------
 # DATA SET OPERATION
@@ -19,6 +20,54 @@ def read_txt2(filename, device):
 
       first_point[0] = np.loadtxt(f, max_rows=1)
       middle_points = np.loadtxt(f, max_rows=num_of_verticles-2)
+      last_point[0] = np.loadtxt(f, max_rows=1)
+
+      # Onsuface points order: first_point,middle_points,last_point
+      # Shifted points order:  middle_points,last_point,first_point
+      onsurface_points = np.concatenate((onsurface_points, first_point))    # Onsurface: first_point
+      onsurface_points = np.concatenate((onsurface_points, middle_points))  # Onsurface: middle_points
+      shifted_points = np.concatenate((shifted_points, middle_points))      # Shifted: middle_points
+      # Remove the last point if it is the same as the first point
+      if np.not_equal(last_point,first_point).any():
+        onsurface_points = np.concatenate((onsurface_points,last_point))    # Onsurface: last_point
+        shifted_points = np.concatenate((shifted_points,last_point))        # Shifted: last_point
+      shifted_points = np.concatenate((shifted_points,first_point))         # Shifted: first_point
+
+  # Vector of 2 consecutive points
+  vectors = shifted_points - onsurface_points
+  # Getting normal vectors
+  norm = np.linalg.norm(vectors, axis=1)
+  normal_vectors = np.ones_like(vectors)
+
+  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+
+  d = torch.from_numpy(onsurface_points).float().to(device)
+  d.requires_grad = True
+  n = torch.from_numpy(normal_vectors).float().to(device)
+  n.requires_grad = True
+
+  return d,n
+
+# Read from file, remove some points and output dataset tensor and normal_vectors tensor
+# p: the proportion of points taken, value range [0,1]
+def read_txt_omit2(filename, p, device):
+  onsurface_points = np.zeros((0,2))
+  shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
+  first_point = np.zeros((1,2))
+  last_point = np.zeros((1,2))
+  middle_points = np.zeros((0,2))
+  next_point = np.zeros((1,2))
+
+  with open(filename, 'r') as f:
+    for c in range(int(f.readline())):
+      num_of_verticles = int(f.readline())
+
+      first_point[0] = np.loadtxt(f, max_rows=1)
+      for i in range(num_of_verticles-2):
+        next_point[0] = np.loadtxt(f, max_rows=1)
+        if p > random.uniform(0.0, 1.0):
+          middle_points = np.append(middle_points, next_point, axis=0)
       last_point[0] = np.loadtxt(f, max_rows=1)
 
       # Onsuface points order: first_point,middle_points,last_point
