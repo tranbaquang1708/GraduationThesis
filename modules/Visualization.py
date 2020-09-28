@@ -3,6 +3,7 @@ from skimage import measure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import torch
 import math
+import numpy as np
 
 #-------------------------------------------------------
 # PLOT
@@ -95,7 +96,7 @@ def grid_from_torch(X, Y, resx=50, resy=50, device='cpu'):
 # SAMPLING
 
 # Neural Network as function
-def nn_sampling(model, xx, yy, device='cpu'):
+def nn_sampling(model, xx, yy, g_norm_output_path=None, device='cpu'):
   # Evaluate function on each grid point
   resx = xx.shape[0]
   resy = yy.shape[1]
@@ -120,10 +121,24 @@ def nn_sampling(model, xx, yy, device='cpu'):
   print()
   print("Grad on each grid point")
   g = torch.norm(g, dim=-1)
-  print(torch.reshape(g, (resx, resy)))
-  # print("Number of elements outside the range [-1.3, 1.3]: " + str((g>1.3).sum() + (g<-1.3).sum()))
-  print("Minimum value: " + str(torch.min(g).item()))
-  print("Maximum value: " + str(torch.max(g).item()))
-  # print("Number of elements outside [0.7,1.3]: " + str(((g<0.7).sum() + (g>1.3).sum()).item()) + "/" + str(g.shape[0]))
+
+  min_g = torch.min(g).item()
+  max_g = torch.max(g).item()
+  print("Minimum value: " + str(min_g))
+  print("Maximum value: " + str(max_g))
+
+  if g_norm_output_path is not None:
+    np.savetxt(g_norm_output_path, g.detach().cpu())
+    print("Norm of gradient saved")
+
+  # g_1 = torch.reshape(g, (resx,resy))
+  # g_1 = np.ones(g_1.shape)
+  # hf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),g_1.detach().cpu())
+  # hf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),g_1)
+  # hf.ax.axis('equal')
+  # plt.show()
+  # g_np = g.detach().cpu().numpy()
+  # visualize3(tt.detach().cpu(), None, g_1, scatter=False, vecfield=False)
+
 
   return torch.reshape(z, (resx,resy))
