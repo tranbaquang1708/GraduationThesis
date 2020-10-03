@@ -3,7 +3,8 @@ import math
 from modules import Distance
 
 # Uniform distribution
-def uniform_distribution(points, device):
+def uniform(points, device='cpu'):
+
   xmin = torch.min(points[:,0]).item()
   xmax = torch.max(points[:,0]).item()
   ymin = torch.min(points[:,1]).item()
@@ -17,12 +18,18 @@ def uniform_distribution(points, device):
   dist_max[:,0] = dist_max[:,0] * xmax
   dist_max[:,1] = dist_max[:,1] * ymax
 
+  if points[0].shape[0] == 3:
+    zmin = torch.min(points[:,2]).item()
+    zmax = torch.max(points[:,2]).item()
+    dist_min[:,2] = dist_min[:,2] * zmin
+    dist_max[:,2] = dist_max[:,2] * zmax
+
   uniform = torch.distributions.uniform.Uniform(dist_min, dist_max)
   dist = uniform.sample().to(device)
 
   return dist
 
-def dense_uniform(points, device):
+def dense_uniform(points, device='cpu'):
   half1 = int(points.shape[0]/2)
   half2 = points.shape[0] - half1
 
@@ -57,21 +64,20 @@ def dense_uniform(points, device):
 
   return dist
 
-def gaussian_kth(points, device):
+def gaussian_kth(points, device='cpu'):
   # Standart deviation
   k = 50
-  d = Distance.pdist_squareform(points, Distance.euclidean_distance)
+  d = Distance.pdist_squareform(points, Distance.euclidean)
   d.to(device)
   d_50 = d[:].topk(50, largest=False)
   std = d_50.values[:,-1].reshape((points.size()[0], 1))
-  # std = torch.cat((std, std), dim=1)
   std.to(device)
 
   # Gaussian
-  g = torch.distributions.normal.Normal(points, std)
-  g = g.sample()
+  dist = torch.distributions.normal.Normal(points, std)
+  dist = dist.sample()
 
-  return g
+  return dist
 
 # The average of a uniform distribution and a sum of Gaussians centered 
 # at X with standard deviation equal to the distance to the k-th nearest 

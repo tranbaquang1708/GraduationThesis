@@ -71,7 +71,7 @@ def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=
 # GRID
 
 # Create a grid from torch tensot
-def grid_from_torch(X, Y, resx=50, resy=50, device='cpu'):
+def grid_from_torch(X, Y, Z=None, resx=50, resy=50, resz=50, device='cpu'):
   xmin = torch.min(X).item()
   xmax = torch.max(X).item()
   ymin = torch.min(Y).item()
@@ -80,34 +80,54 @@ def grid_from_torch(X, Y, resx=50, resy=50, device='cpu'):
   dx = xmax - xmin
   dy = ymax - ymin
 
-  # resx = 50
-  # resy = 100
+  if Z is None: # 2D case
+    ed = 0.1*math.sqrt(dx*dx+dy*dy)
 
-  ed = 0.1*math.sqrt(dx*dx+dy*dy)
+    x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
+    y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
 
-  x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
-  y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
+    xx, yy = torch.meshgrid(x, y)
 
-  xx, yy = torch.meshgrid(x, y)
+    return xx.to(device), yy.to(device)
+  else: # 3D case
+    zmin = torch.min(Z).item()
+    zmax = torch.max(Z).item()
 
-  return xx.to(device), yy.to(device)
+    dz = zmax - zmin
+
+    ed = 0.1 * math.sqrt(dx*dx + dy*dy + dz*dz)
+
+    x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
+    y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
+    z = torch.arange(zmin-ed, zmax+ed, step=(dz+2*ed)/float(resz))
+
+    xx, yy, zz = torch.meshgrid(x, y, z)
+
+    return xx.to(device), yy.to(device), zz.to(device)
 
 #-------------------------------------------------------------------------
 # SAMPLING
 
 # Neural Network as function
-def nn_sampling(model, xx, yy, g_norm_output_path=None, device='cpu'):
+def nn_sampling(model, xx, yy, zz=None, g_norm_output_path=None, device='cpu'):
   # Evaluate function on each grid point
   resx = xx.shape[0]
-  resy = yy.shape[1]
-  dimg = resx * resy
-  z = torch.empty((0,1))
-  tt = torch.stack((xx, yy), axis=2)
-  # print(tt.size())
-  tt = torch.reshape(tt, (dimg,2))
+  resy = yy.shape[0]
+  if zz is None:
+    dimg = resx * resy
+    tt = torch.stack((xx, yy), axis=2)
+    tt = torch.reshape(tt, (dimg,2))
+  else:
+    resz = zz.shape[0]
+    dimg = resx * resy * resz
+    tt = torch.stack((xx, yy, zz), axis=3)
+    tt = torch.reshape(tt, (dimg,3))
+  
   z = model(tt)
-  print("Value of function on each grid point")
-  print(torch.reshape(z, (resx,resy)))
+  if zz is None:
+    print(torch.reshape(z, (resx,resy))) 
+  else: 
+    print(torch.reshape(z, (resx,resy, resz)))
 
   # Compute grad on each grid point
   x = torch.autograd.Variable(tt, requires_grad=True)
@@ -131,14 +151,7 @@ def nn_sampling(model, xx, yy, g_norm_output_path=None, device='cpu'):
     np.savetxt(g_norm_output_path, g.detach().cpu())
     print("Norm of gradient saved")
 
-  # g_1 = torch.reshape(g, (resx,resy))
-  # g_1 = np.ones(g_1.shape)
-  # hf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),g_1.detach().cpu())
-  # hf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),g_1)
-  # hf.ax.axis('equal')
-  # plt.show()
-  # g_np = g.detach().cpu().numpy()
-  # visualize3(tt.detach().cpu(), None, g_1, scatter=False, vecfield=False)
-
-
-  return torch.reshape(z, (resx,resy))
+  if zz is None:
+    return torch.reshape(z, (resx,resy))
+  else:
+    return torch.reshape(z, (resx, resy, resz))

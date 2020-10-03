@@ -10,10 +10,10 @@ from modules import Distance, Visualization, Distribution
 
 # Neural network model
 class IGRPerceptron(nn.Module):
-  def __init__(self):
+  def __init__(self, dimension):
     # Neural network layers
     super(IGRPerceptron, self).__init__()
-    self.fc1 = nn.Linear(2, 512)
+    self.fc1 = nn.Linear(dimension, 512)
     self.fc2 = nn.Linear(512, 512)
     self.fc3 = nn.Linear(512, 512)
     self.fc4 = nn.Linear(512, 512)
@@ -55,8 +55,8 @@ class LossFunction:
 
     self.distribution = distribution
 
-  def eval_distribution(self, model, batch_points, device):
-    d = self.distribution(model, batch_points, device)
+  def eval_distribution(self, model, batch_points, device='cpu'):
+    d = self.distribution(batch_points, device)
     # Visualization.scatter_plot(d.detach().cpu().numpy())
     # print(d)
     x = torch.autograd.Variable(d, requires_grad=True)
@@ -96,19 +96,22 @@ def to_batch(dataset, batch_size):
   indices = torch.randperm(dataset_size)
   # print(indices)
   batches_indices = []
-    
-  for i in range(0, num_of_batch):
-    batches_indices.append(indices[i*batch_size:(i+1)*batch_size])
 
-  if dataset_size % batch_size != 0:
-    batches_indices.append(indices[-batch_size:])
+  if dataset_size < batch_size:
+    batches_indices.append(indices)
+  else:
+    for i in range(0, num_of_batch):
+      batches_indices.append(indices[i*batch_size:(i+1)*batch_size])
+
+    if dataset_size % batch_size != 0:
+      batches_indices.append(indices[-batch_size:])
 
   # print(batches_indices)
   return batches_indices
 
 def train(dataset, normal_vectors, num_epochs, batch_size, device, loss_function, model=None):
   if model is None:
-    model = IGRPerceptron()
+    model = IGRPerceptron(dataset[0].shape[0])
     model = model.to(device)
     
   optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
@@ -119,25 +122,29 @@ def train(dataset, normal_vectors, num_epochs, batch_size, device, loss_function
   loss_value = []
 
   for i in range(num_epochs):
-    batches_indices = to_batch(dataset, batch_size)
-    for batch_indices in batches_indices:
-      batch_points = dataset[batch_indices]
-      batch_points.to(device)
-      # print(batch_points)
-      # batch_points.requires_grad = True
-      batch_normal_vectors = normal_vectors[batch_indices]
-      batch_normal_vectors.to(device)
-      # batch_normal_vectors.requires_grad = True
-      result =  model(batch_points)
-      loss = loss_function.irg_loss(model, result, batch_points, batch_normal_vectors, device)
-      optimizer.zero_grad()
-      loss.backward(retain_graph=True)
-      optimizer.step()
+    # batches_indices = to_batch(dataset, batch_size)
+    # for batch_indices in batches_indices:
+    #   batch_points = dataset[batch_indices]
+    #   batch_points.to(device)
+    #   # print(batch_points)
+    #   # batch_points.requires_grad = True
+    #   batch_normal_vectors = normal_vectors[batch_indices]
+    #   batch_normal_vectors.to(device)
+    #   # batch_normal_vectors.requires_grad = True
+    batch_points = dataset
+    batch_points.to(device)
+    batch_normal_vectors = normal_vectors
+    batch_normal_vectors.to(device)
+    result =  model(batch_points)
+    loss = loss_function.irg_loss(model, result, batch_points, batch_normal_vectors, device)
+    optimizer.zero_grad()
+    loss.backward(retain_graph=True)
+    optimizer.step()
       # Visualization.scatter_plot(batch_points.detach())
-      
+
     if (i+1)%500 == 0:
       loss_i.append(i+1)
-      loss_value.append(loss)
+      loss_value.append(loss.item())
       print("Step " + str(i+1) + ":")
       print(loss)
 
@@ -153,14 +160,16 @@ def save_model(path, model):
   torch.save(model.state_dict(), path)
 
 # Load trained data
-def load_model(path, device):
+def load_model(path, dimension=3, device='cpu'):
   if os.path.isfile(path):
-    model = IGRPerceptron()
+    model = IGRPerceptron(dimension)
     model.to(device)
     model.load_state_dict(torch.load(path))
     model.eval()
+    print('Model loaded')
 
     return model
 
+  print('No model found')
   return None
 

@@ -7,8 +7,10 @@ import random
 # --------------------------------------------------------------------------------
 # DATA SET OPERATION
 
+## 2D
+
 # Read text file and output dataset tensor and normal_vectors tensor
-def read_txt2(filename, device):
+def read_txt2(filename, device='cpu'):
   onsurface_points = np.zeros((0,2))
   shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
   first_point = np.zeros((1,2))
@@ -51,7 +53,7 @@ def read_txt2(filename, device):
 
 # Read from file, remove some points and output dataset tensor and normal_vectors tensor
 # p: the proportion of points taken, value range [0,1]
-def read_txt_omit2(filename, p, device):
+def read_txt_omit2(filename, p='1', device='cpu'):
   onsurface_points = np.zeros((0,2))
   shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
   first_point = np.zeros((1,2))
@@ -98,7 +100,7 @@ def read_txt_omit2(filename, p, device):
   return d,n
 
 # Sample points on a circle
-def circle_dataset(device):
+def circle_dataset(device='cpu'):
 	# Points
   num_on_points = 100
   num_points = 3 * num_on_points
@@ -120,3 +122,18 @@ def circle_dataset(device):
   n[:,1] = v[:,0]
 
   return d.to(device),n.to(device)
+
+## 3D
+def read_txt3(filename, device='cpu'):
+  with open(filename, 'r') as f:
+    raw_data = np.loadtxt(f)
+  onsurface_points, vectors = np.hsplit(raw_data, 2)
+  norm = np.linalg.norm(vectors, axis=0)
+  normal_vectors = vectors/norm
+  
+  d = torch.from_numpy(onsurface_points).float().to(device)
+  d.requires_grad = True
+  n = torch.from_numpy(normal_vectors).float().to(device)
+  n.requires_grad = True
+  
+  return d, n
