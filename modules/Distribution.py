@@ -83,7 +83,7 @@ def gaussian_kth(points, device='cpu'):
 # at X with standard deviation equal to the distance to the k-th nearest 
 # neighbor (we used k = 50)
 def uniform_gaussian(points, device):
-  u = uniform_distribution(points, device)
+  u = uniform(points, device)
   g = gaussian_kth(points, device)
 
   return (u+g)/2
