@@ -109,7 +109,7 @@ def to_batch(dataset, batch_size):
   # print(batches_indices)
   return batches_indices
 
-def train(dataset, normal_vectors, num_epochs, batch_size, device, loss_function, model=None):
+def train(dataset, normal_vectors, num_iters, batch_size, loss_function, model=None, output_path=None, device='cpu'):
   if model is None:
     model = IGRPerceptron(dataset[0].shape[0])
     model = model.to(device)
@@ -118,10 +118,16 @@ def train(dataset, normal_vectors, num_epochs, batch_size, device, loss_function
 
   loss = 999.0
 
-  loss_i = []
-  loss_value = []
+  try:
+    loss_value = np.load(output_path)
+    print('Loss values loaded')
+    start = int(loss_value[-1,0])
+  except:
+    loss_value = np.empty([0,2])
+    print('No previous loss value found.')
+    start = 0
 
-  for i in range(num_epochs):
+  for i in range(start, start+num_iters):
     # batches_indices = to_batch(dataset, batch_size)
     # for batch_indices in batches_indices:
     #   batch_points = dataset[batch_indices]
@@ -143,15 +149,20 @@ def train(dataset, normal_vectors, num_epochs, batch_size, device, loss_function
       # Visualization.scatter_plot(batch_points.detach())
 
     if (i+1)%500 == 0:
-      loss_i.append(i+1)
-      loss_value.append(loss.item())
+      # loss_i = np.append(loss_i, i+1)
+      # loss_value = np.append(loss_value, loss.item())
+      loss_value = np.append(loss_value, [[i+1, loss.item()]], axis=0)
       print("Step " + str(i+1) + ":")
       print(loss)
 
-    if num_epochs == 1:
+    if num_iters == 1:
       print(loss)
 
-  Visualization.loss_graph(loss_i, loss_value)
+  Visualization.loss_graph(loss_value[:,0], loss_value[:,1])
+
+  # Save loss value
+  if output_path is not None:
+    np.save(output_path, loss_value)
     
   return model
   
@@ -173,3 +184,6 @@ def load_model(path, dimension=3, device='cpu'):
   print('No model found')
   return None
 
+def show_loss_figure(loss_path):
+  loss_value = np.load(loss_path)
+  Visualization.loss_graph(loss_value[:,0], loss_value[:,1])
