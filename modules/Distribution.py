@@ -64,7 +64,7 @@ def dense_uniform(points, device='cpu'):
 
   return dist
 
-def gaussian_kth(points, device='cpu'):
+def gaussian(points, device='cpu'):
   # Standart deviation
   k = 50
   d = Distance.pdist_squareform(points, Distance.euclidean)
@@ -74,8 +74,12 @@ def gaussian_kth(points, device='cpu'):
   std.to(device)
 
   # Gaussian
-  dist = torch.distributions.normal.Normal(points, std)
-  dist = dist.sample()
+  mix = torch.distributions.categorical.Categorical(torch.ones(points.shape[0],).to(device))
+  comp = torch.distributions.independent.Independent(
+    torch.distributions.normal.Normal(points, std), 1)
+  dist = torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
+  
+  dist = dist.sample(torch.tensor([points.shape[0]]))
 
   return dist
 
@@ -84,6 +88,6 @@ def gaussian_kth(points, device='cpu'):
 # neighbor (we used k = 50)
 def uniform_gaussian(points, device):
   u = uniform(points, device)
-  g = gaussian_kth(points, device)
+  g = gaussian(points, device)
 
   return (u+g)/2
