@@ -137,3 +137,87 @@ def read_txt3(filename, device='cpu'):
   n.requires_grad = True
   
   return d, n
+
+# def read_txt3_to_batch(file_pointer, batch_size, line_indices, device='cpu'):
+#   points = np.zeros((0,3))
+#   normal_vectors = np.zeros((0,3))
+#   print(line_indices)
+
+#   # with open(filename, 'r') as f:
+#   chosen = sorted(random.sample(line_indices, batch_size))
+#   # print(chosen)
+
+#   for offset in line_indices:
+#     print(offset)
+#     file_pointer.seek(offset)
+#     line = np.loadtxt(file_pointer, max_rows=1)
+#     # line = file_pointer.readline()
+#     # print(line)
+#     # line = np.fromstring(file_pointer.readline(), sep=' ')
+#     # line = np.fromstring(line, sep=' ')
+#     print(line)
+#     point, normal_vector = np.hsplit(line, 2)
+#     print('next')
+#     points = np.append(points, [point], axis=0)
+#     normal_vectors = np.append(normal_vectors, [normal_vector], axis=0)
+
+#   d = torch.from_numpy(points).float().to(device)
+#   d.requires_grad = True
+#   n = torch.from_numpy(normal_vectors).float().to(device)
+#   n.requires_grad = True
+  
+#   return d, n 
+
+def read_txt3_to_batch(data_file, batch_size, num_of_lines, device):
+  points = np.zeros((0,3))
+  normal_vectors = np.zeros((0,3))
+
+  # Uniformly sample random points
+  chosen = sorted(random.sample(range(num_of_lines), batch_size))
+  
+  with open(data_file, 'r') as f:
+    for i, line in enumerate(f):
+      if i in chosen:
+        line = np.fromstring(line, sep=' ')
+        point, normal_vector = np.hsplit(line, 2)
+        points = np.append(points, [point], axis=0)
+        normal_vectors = np.append(normal_vectors, [normal_vector], axis=0)
+        if i == chosen[-1]:
+          break
+
+  # print(points)
+  d = torch.from_numpy(points).float().to(device)
+  d.requires_grad = True
+  n = torch.from_numpy(normal_vectors).float().to(device)
+  n.requires_grad = True
+  
+  return d, n 
+
+# Read through file and create line indices
+def line_indexing(filename):
+  s = [0]
+  with open(filename, 'r') as f:
+    line_indices = [s.append(s[0]+len(n)) or s.pop(0) for n in f]
+
+  return line_indices
+
+def get_num_of_lines(data_file):
+  with open(data_file) as f:
+    for i, l in enumerate(f):
+      pass
+
+  return i + 1
+
+
+# Get loss values of previous training
+def load_loss_values(filename):
+  try:
+    loss_value = np.load(filename)
+    print('Loss values loaded')
+    start = int(loss_value[-1,0])
+  except:
+    loss_value = np.empty([0,2])
+    print('No previous loss value found.')
+    start = 0
+
+    return loss_value, start

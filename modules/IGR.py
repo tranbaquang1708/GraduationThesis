@@ -6,7 +6,7 @@ import numpy as np
 import math
 import sys
 import os
-from modules import Distance, Visualization, Distribution
+from modules import Distance, Visualization, Distribution, Operation
 
 # Neural network model
 class IGRPerceptron(nn.Module):
@@ -89,68 +89,29 @@ class LossFunction:
 
     return geo_loss + self.tau*grad_loss + self.ld * constrain
 
-def to_batch(dataset, batch_size):
-  dataset_size = len(dataset)
-  num_of_batch = dataset_size // batch_size
-  # print(num_of_batch)
-  indices = torch.randperm(dataset_size)
-  # print(indices)
-  batches_indices = []
+def train(num_iters, model, loss_function, batch_size=None, data_file=None, points=None, normal_vectors=None, output_path=None, device='cpu'):
+  if data_file is not None:
+    model = train_file(num_iters, model, loss_function, batch_size, data_file, output_path, device)
+  if points is not None:
+    model = train_data(num_iters, model, loss_function, points, normal_vectors, output_path, device)
 
-  if dataset_size < batch_size:
-    batches_indices.append(indices)
-  else:
-    for i in range(0, num_of_batch):
-      batches_indices.append(indices[i*batch_size:(i+1)*batch_size])
+  return model
 
-    if dataset_size % batch_size != 0:
-      batches_indices.append(indices[-batch_size:])
-
-  # print(batches_indices)
-  return batches_indices
-
-def train(dataset, normal_vectors, num_iters, batch_size, loss_function, model=None, output_path=None, device='cpu'):
-  if model is None:
-    model = IGRPerceptron(dataset[0].shape[0])
-    model = model.to(device)
-    
+# Train with data passed
+def train_data(num_iters, model, loss_function, points, normal_vectors, output_path=None, device='cpu'):    
   optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-
-  loss = 999.0
-
-  try:
-    loss_value = np.load(output_path)
-    print('Loss values loaded')
-    start = int(loss_value[-1,0])
-  except:
-    loss_value = np.empty([0,2])
-    print('No previous loss value found.')
-    start = 0
+  # Get loss values and number of iteration in last training
+  loss_value, start = Operation.load_loss_values(output_path)
 
   for i in range(start, start+num_iters):
-    # batches_indices = to_batch(dataset, batch_size)
-    # for batch_indices in batches_indices:
-    #   batch_points = dataset[batch_indices]
-    #   batch_points.to(device)
-    #   # print(batch_points)
-    #   # batch_points.requires_grad = True
-    #   batch_normal_vectors = normal_vectors[batch_indices]
-    #   batch_normal_vectors.to(device)
-    #   # batch_normal_vectors.requires_grad = True
-    batch_points = dataset
-    batch_points.to(device)
-    batch_normal_vectors = normal_vectors
-    batch_normal_vectors.to(device)
-    result =  model(batch_points)
-    loss = loss_function.irg_loss(model, result, batch_points, batch_normal_vectors, device)
+    result =  model(points)
+    loss = loss_function.irg_loss(model, result, points, normal_vectors, device)
     optimizer.zero_grad()
     loss.backward(retain_graph=True)
     optimizer.step()
-      # Visualization.scatter_plot(batch_points.detach())
+      # Visualization.scatter_plot(points.detach())
 
     if (i+1)%500 == 0:
-      # loss_i = np.append(loss_i, i+1)
-      # loss_value = np.append(loss_value, loss.item())
       loss_value = np.append(loss_value, [[i+1, loss.item()]], axis=0)
       print("Step " + str(i+1) + ":")
       print(loss)
@@ -166,23 +127,64 @@ def train(dataset, normal_vectors, num_iters, batch_size, loss_function, model=N
     
   return model
   
+# Train with file path passed
+def train_file(num_iters, model, loss_function, batch_size, data_file, output_path=None, device='cpu'):
+  optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+
+  # Get loss values and number of iteration in last training
+  loss_value, start = Operation.load_loss_values(output_path)
+
+  # Get index of line
+  # line_indices = Operation.line_indexing(data_file)
+  
+  # Get total number of lines
+  num_of_lines = Operation.get_num_of_lines(data_file)
+  
+  # Train model
+  # with open(data_file, 'r') as f:
+  for i in range(start, start+num_iters):
+    # points, normal_vectors = Operation.read_txt3_to_batch(f, batch_size, line_indices, device)
+    points, normal_vectors = Operation.read_txt3_to_batch(data_file, batch_size, num_of_lines, device)
+    result =  model(points)
+    loss = loss_function.irg_loss(model, result, points, normal_vectors, device)
+    optimizer.zero_grad()
+    loss.backward(retain_graph=True)
+    optimizer.step()
+
+    # Print loss value
+    if (i+1)%500 == 0:
+      loss_value = np.append(loss_value, [[i+1, loss.item()]], axis=0)
+      print("Step " + str(i+1) + ":")
+      print(loss)
+
+  if num_iters == 1:
+    print(loss)
+
+  # Plot line graph of loss values
+  Visualization.loss_graph(loss_value[:,0], loss_value[:,1])
+
+  # Save loss value
+  if output_path is not None:
+    np.save(output_path, loss_value)
+    
+  return model
+
 # Save trained data
 def save_model(path, model):
   torch.save(model.state_dict(), path)
 
 # Load trained data
 def load_model(path, dimension=3, device='cpu'):
-  if os.path.isfile(path):
-    model = IGRPerceptron(dimension)
-    model.to(device)
+  model = IGRPerceptron(dimension)
+  model.to(device)
+  try:
     model.load_state_dict(torch.load(path))
     model.eval()
     print('Model loaded')
+  except:
+    print('No model found. New model created')
 
-    return model
-
-  print('No model found')
-  return None
+  return model
 
 def show_loss_figure(loss_path):
   loss_value = np.load(loss_path)
