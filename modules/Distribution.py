@@ -1,5 +1,6 @@
 import torch
 import math
+import random
 from modules import Distance
 
 # Uniform distribution
@@ -90,4 +91,7 @@ def uniform_gaussian(points, device):
   u = uniform(points, device)
   g = gaussian(points, device)
 
-  return (u+g)/2
+  u_g = torch.cat((u,g))
+  r = random.sample(range(u.shape[0]+g.shape[0]), u.shape[0])
+  
+  return u_g[r]
