@@ -13,31 +13,32 @@ class IGRPerceptron(nn.Module):
   def __init__(self, dimension):
     # Neural network layers
     super(IGRPerceptron, self).__init__()
-    self.fc1 = nn.Linear(dimension, 512)
+    self.fc0 = nn.Linear(dimension, 512)
+    self.fc1 = nn.Linear(512, 512)
     self.fc2 = nn.Linear(512, 512)
-    self.fc3 = nn.Linear(512, 512)
+    self.fc3 = nn.Linear(512, 512 - dimension)
     self.fc4 = nn.Linear(512, 512)
     self.fc5 = nn.Linear(512, 512)
     self.fc6 = nn.Linear(512, 512)
-    self.fc7 = nn.Linear(512, 512)
     self.fc_last = nn.Linear(512, 1)
     self.activation = nn.Softplus()
 
   def forward(self, x):
-    out = self.fc1(x)
+    out = self.fc0(x)
+    out = self.activation(out)
+    out = self.fc1(out)
     out = self.activation(out)
     out = self.fc2(out)
     out = self.activation(out)
     out = self.fc3(out)
     out = self.activation(out)
+    out = torch.cat((out, x), 1) # Skip connection
     out = self.fc4(out)
     out = self.activation(out)
     out = self.fc5(out)
     out = self.activation(out)
-    # out = self.fc6(out)
-    # out = self.activation(out)
-    # out = self.fc7(out)
-    # out = self.activation(out)
+    out = self.fc6(out)
+    out = self.activation(out)
     out = self.fc_last(out)
     return out
 
