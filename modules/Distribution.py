@@ -97,7 +97,7 @@ def gaussian(points, dist_size, device='cpu'):
 # at X with standard deviation equal to the distance to the k-th nearest 
 # neighbor (we used k = 50)
 def uniform_gaussian(points, dist_size, device='cpu'):
-  u = uniform(points, dist_size, device)
+  u = uniform(points, dist_size//8, device)
   g = gaussian(points, dist_size, device)
 
   u_g = torch.cat((u,g))
