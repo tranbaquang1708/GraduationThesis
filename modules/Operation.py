@@ -41,8 +41,8 @@ def read_txt2(filename, device='cpu'):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
   d.requires_grad = True
@@ -220,4 +220,4 @@ def load_loss_values(filename):
     print('No previous loss value found.')
     start = 0
 
-    return loss_value, start
+  return loss_value, start
