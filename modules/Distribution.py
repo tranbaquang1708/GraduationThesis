@@ -2,6 +2,7 @@ import torch
 import math
 import random
 from scipy import spatial
+from modules import Visualization
 
 # Uniform distribution
 def uniform(points, dist_size, device='cpu'):
@@ -102,5 +103,6 @@ def uniform_gaussian(points, dist_size, device='cpu'):
 
   u_g = torch.cat((u,g))
   r = random.sample(range(u.shape[0]+g.shape[0]), u.shape[0])
+  Visualization.scatter_plot(u_g[r].detach().cpu().numpy())
   
   return u_g[r]
