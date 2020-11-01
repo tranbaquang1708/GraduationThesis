@@ -17,7 +17,7 @@ class IGRPerceptron(nn.Module):
     self.fc0 = nn.Linear(dimension, 512)
     self.fc1 = nn.Linear(512, 512)
     self.fc2 = nn.Linear(512, 512)
-    self.fc3 = nn.Linear(512, 512 - dimension) # v1.7 Skip connection
+    self.fc3 = nn.Linear(512, 512 - dimension) # Skip connection
     # self.fc3 = nn.Linear(512, 512) # v1.6 No skip connection
     self.fc4 = nn.Linear(512, 512)
     self.fc5 = nn.Linear(512, 512)
@@ -34,7 +34,7 @@ class IGRPerceptron(nn.Module):
     out = self.activation(out)
     out = self.fc3(out)
     out = self.activation(out)
-    out = torch.cat((out, x), 1) # v1.7 Skip connection
+    out = torch.cat((out, x), 1) / np.sqrt(2) # v1.7 Skip connection
     out = self.fc4(out)
     out = self.activation(out)
     out = self.fc5(out)
