@@ -67,42 +67,24 @@ def dense_uniform(points, dist_size, device='cpu'):
 
   return dist
 
-def gaussian(points, dist_size, device='cpu'):
-  # Standart deviation
-  # k-D tree
-  k = 50
+def find_kth_closest_distance(points, k):
   tree = spatial.KDTree(points.detach().cpu().numpy())
   d_50 = tree.query(points.detach().cpu().numpy(), k=k)[0][:,-1]
-  std = torch.from_numpy(d_50).reshape((points.size()[0], 1)).to(device)
-
-  # k = 50
-  # d = Distance.pdist_squareform(points, Distance.euclidean)
-  # d.to(device)
-  # d_50 = d[:].topk(50, largest=False)
-  # print(d_50.values[:,-1].reshape((points.size()[0], 1)))
-  # std = d_50.values[:,-1].reshape((points.size()[0], 1))
-  # std.to(device)
-
-  # Gaussian
-  mix = torch.distributions.categorical.Categorical(torch.ones(points.shape[0],).to(device))
-  comp = torch.distributions.independent.Independent(
-    torch.distributions.normal.Normal(points, std), 1)
-  dist = torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
+  stddvt = torch.from_numpy(d_50).reshape((points.size()[0], 1))
   
-  # dist = dist.sample(torch.tensor([points.shape[0]]))
-  dist = dist.sample(torch.tensor([dist_size]))
+  return stddvt.type(torch.cuda.FloatTensor)
 
+def gaussian(points, dist_size, stddvt, device='cpu'):
+  dist = points + (torch.randn_like(points, dtype=torch.float32) * stddvt)
   return dist
 
 # The average of a uniform distribution and a sum of Gaussians centered 
 # at X with standard deviation equal to the distance to the k-th nearest 
 # neighbor (we used k = 50)
-def uniform_gaussian(points, dist_size, device='cpu'):
+def uniform_gaussian(points, dist_size, stddvt, device='cpu'):
   u = uniform(points, dist_size//8, device)
-  g = gaussian(points, dist_size, device)
+  g = gaussian(points, dist_size, stddvt, device)
 
   u_g = torch.cat((u,g))
-  r = random.sample(range(u.shape[0]+g.shape[0]), u.shape[0])
-  Visualization.scatter_plot(u_g[r].detach().cpu().numpy())
   
-  return u_g[r]
+  return u_g
