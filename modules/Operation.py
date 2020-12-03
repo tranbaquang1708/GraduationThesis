@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as f
 import random
-
+from modules import Visualization
 # --------------------------------------------------------------------------------
 # DATA SET OPERATION
 
@@ -116,7 +116,6 @@ def circle_dataset(device='cpu'):
   d_shifted = torch.roll(d, -1, 0)
   v = d_shifted - d
   v = f.normalize(v, p=2, dim=1)
-  # n = torch.zeros_like(v, requires_grad=True)
   n = torch.zeros_like(v)
   n[:,0] = -v[:,1]
   n[:,1] = v[:,0]
@@ -208,6 +207,8 @@ def get_num_of_lines(data_file):
 
   return i + 1
 
+#---------------------------------------------
+# Loss value
 
 # Get loss values of previous training
 def load_loss_values(filename):
@@ -221,3 +222,55 @@ def load_loss_values(filename):
     start = 0
 
   return loss_value, start
+
+
+# Long list to list of lists
+def chunks(lst, n):
+  for i in range(0, len(lst), n):
+    yield lst[i:i + n]
+
+#------------------------------------------------
+# Compute grad
+def compute_grad(points, model):
+  var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
+  outputs = model(var)
+  g = torch.autograd.grad(outputs=outputs,
+                          inputs=var, 
+                          grad_outputs=torch.ones(outputs.size()).to(points.device), 
+                          create_graph=True,
+                          retain_graph=True, 
+                          only_inputs=True)[0]
+
+  return g
+
+#-----------------------------------------------------
+# Write to file
+
+def save_vtk(filename, tt, subx, suby, subz, z):
+  # Create .vtk file
+  # Only work for 3D
+  # INPUT
+  #   tt is the flattened grid
+  #   z is the value of distance function at each point in the grid
+  #   subx, suby, subz is the size of each vertex
+
+  field_title = 'DENSITY'
+
+  with open(filename, 'w') as f:
+    f.write('# vtk DataFile Version 3.0\n')
+    f.write('vtk output\n')
+    f.write('ASCII\n')
+    f.write('DATASET STRUCTURED_GRID\n')
+    f.write('DIMENSIONS ' + str(subx) + ' ' + str(suby) + ' ' + str(subz) +'\n')
+    f.write('POINTS ' + str(subx*suby*subz) + ' double\n')
+
+    np.savetxt(f, tt.detach().cpu().numpy())
+    
+    f.write('\n\n')
+
+    f.write('POINT_DATA ' + str(subx*suby*subz) + '\n')
+    f.write('SCALARS ' + field_title + ' double' + '\n')
+    f.write('LOOKUP_TABLE default\n')
+
+    np.savetxt(f, z.detach().cpu().numpy())
+    f.write('\n')
