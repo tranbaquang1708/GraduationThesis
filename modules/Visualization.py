@@ -34,7 +34,7 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
   # Scatter plot for points
   if scatter:
     plt.figure(figsize=(8,4))
-    h_points = plt.scatter(dataset[:,0], dataset[:,1], s=5)
+    h_points = plt.scatter(dataset[:,0], dataset[:,1], s=1)
     plt.title('Point-cloud')
     plt.show()
   # Plot vector field
@@ -64,7 +64,7 @@ def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=
   if scatter:
     fig = plt.figure(figsize=(10,10))
     ax_points = fig.add_subplot(111, projection='3d')
-    ax_points.scatter(dataset[:,0], dataset[:,1], dataset[:,2])
+    ax_points.scatter(dataset[:,0], dataset[:,1], dataset[:,2], s=1)
     plt.show()
   if vecfield:
     fig = plt.figure(figsize=(10,10))
