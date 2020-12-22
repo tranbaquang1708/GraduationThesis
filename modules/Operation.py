@@ -231,22 +231,22 @@ def chunks(lst, n):
 
 #------------------------------------------------
 # Compute grad
-def compute_grad(points, model):
-  var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
-  outputs = model(var)
+def compute_grad(inputs, outputs):
+  # var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
+  # outputs = model(var)
   g = torch.autograd.grad(outputs=outputs,
-                          inputs=var, 
-                          grad_outputs=torch.ones(outputs.size()).to(points.device), 
+                          inputs=inputs, 
+                          grad_outputs=torch.ones_like(outputs, requires_grad=False, device=outputs.device), 
                           create_graph=True,
                           retain_graph=True, 
-                          only_inputs=True)[0]
+                          only_inputs=True)[0][:, -3:]
 
   return g
 
 #-----------------------------------------------------
 # Write to file
 
-def save_vtk(filename, tt, subx, suby, subz, z):
+def save_vtk(filename, tt, resx, resy, resz, z):
   # Create .vtk file
   # Only work for 3D
   # INPUT
@@ -261,14 +261,14 @@ def save_vtk(filename, tt, subx, suby, subz, z):
     f.write('vtk output\n')
     f.write('ASCII\n')
     f.write('DATASET STRUCTURED_GRID\n')
-    f.write('DIMENSIONS ' + str(subx) + ' ' + str(suby) + ' ' + str(subz) +'\n')
-    f.write('POINTS ' + str(subx*suby*subz) + ' double\n')
+    f.write('DIMENSIONS ' + str(resx) + ' ' + str(resy) + ' ' + str(resz) +'\n')
+    f.write('POINTS ' + str(resx*resy*resz) + ' double\n')
 
     np.savetxt(f, tt.detach().cpu().numpy())
     
     f.write('\n\n')
 
-    f.write('POINT_DATA ' + str(subx*suby*subz) + '\n')
+    f.write('POINT_DATA ' + str(resx*resy*resz) + '\n')
     f.write('SCALARS ' + field_title + ' double' + '\n')
     f.write('LOOKUP_TABLE default\n')
 
