@@ -58,24 +58,32 @@ class Implicit(nn.Module):
     return x
 
 # Save model and optimizer
-def save_model(path, model, optimizer):
+def save_model(path, model, optimizer, scheduler):
   torch.save({
     'model_state_dict': model.state_dict(),
     'optimizer_state_dict': optimizer.state_dict(),
+    'scheduler_state_dict': scheduler.state_dict()
   }, path)
 
 
 # Load model and optimizer
 def load_model(path, dimension=3, device='cpu'):
   model = Implicit(dimension).to(device)
-  optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+  optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+  # Scheduler
+  scheduler_steps = []
+  for i in range(4):
+    scheduler_steps.append(2000 * (i+1))
+  scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=scheduler_steps, gamma=0.25)
+
   try:
     checkpoint = torch.load(path, map_location=lambda storage, loc: storage)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     model.eval()
     print('Model loaded')
   except:
     print('No model found. New model created')
 
-  return model, optimizer
+  return model, optimizer, scheduler
