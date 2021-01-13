@@ -3,11 +3,12 @@ import numpy as np
 import torch
 import torch.nn.functional as f
 import random
+from scipy.spatial import KDTree
 from modules import Visualization
-# --------------------------------------------------------------------------------
-# DATA SET OPERATION
 
-## 2D
+#--------------------------------------------------------------------
+# Read file
+
 
 # Read text file and output dataset tensor and normal_vectors tensor
 def read_txt2(filename, device='cpu'):
@@ -89,8 +90,8 @@ def read_txt_omit2(filename, p='1', device='cpu'):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
   d.requires_grad = True
@@ -128,7 +129,7 @@ def read_txt3(filename, device='cpu'):
     raw_data = np.loadtxt(f)
   onsurface_points, vectors = np.hsplit(raw_data, 2)
   norm = np.linalg.norm(vectors, axis=0)
-  normal_vectors = vectors/norm
+  normal_vectors = -vectors/norm
   
   d = torch.from_numpy(onsurface_points).float().to(device)
   d.requires_grad = True
@@ -207,41 +208,6 @@ def get_num_of_lines(data_file):
 
   return i + 1
 
-#---------------------------------------------
-# Loss value
-
-# Get loss values of previous training
-def load_loss_values(filename):
-  try:
-    loss_value = np.load(filename)
-    print('Loss values loaded')
-    start = int(loss_value[-1,0])
-  except:
-    loss_value = np.empty([0,2])
-    print('No previous loss value found.')
-    start = 0
-
-  return loss_value, start
-
-
-# Long list to list of lists
-def chunks(lst, n):
-  for i in range(0, len(lst), n):
-    yield lst[i:i + n]
-
-#------------------------------------------------
-# Compute grad
-def compute_grad(inputs, outputs):
-  # var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
-  # outputs = model(var)
-  g = torch.autograd.grad(outputs=outputs,
-                          inputs=inputs, 
-                          grad_outputs=torch.ones_like(outputs, requires_grad=False, device=outputs.device), 
-                          create_graph=True,
-                          retain_graph=True, 
-                          only_inputs=True)[0][:, -3:]
-
-  return g
 
 #-----------------------------------------------------
 # Write to file
@@ -274,3 +240,108 @@ def save_vtk(filename, tt, resx, resy, resz, z):
 
     np.savetxt(f, z.detach().cpu().numpy())
     f.write('\n')
+
+
+#---------------------------------------------
+# Loss value
+
+# Get loss values of previous training
+def load_loss_values(filename):
+  try:
+    loss_value = np.load(filename)
+    print('Loss values loaded')
+    start = int(loss_value[-1,0])
+  except:
+    loss_value = np.empty([0,5])
+    print('No previous loss value found.')
+    start = 0
+
+  return loss_value, start
+
+
+# Long list to list of lists
+def chunks(lst, n):
+  for i in range(0, len(lst), n):
+    yield lst[i:i + n]
+
+
+#------------------------------------------------
+# Compute grad
+def compute_grad(inputs, outputs):
+  # var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
+  # outputs = model(var)
+  g = torch.autograd.grad(outputs=outputs,
+                          inputs=inputs, 
+                          grad_outputs=torch.ones_like(outputs, requires_grad=False, device=outputs.device), 
+                          create_graph=True,
+                          retain_graph=True, 
+                          only_inputs=True)[0][:, -3:]
+
+  return g
+
+def laplacian(model, inputs, p=2):
+  g = compute_grad(inputs, model(inputs))
+  # g = g.abs().pow(p-2) * g
+
+  div = 0.
+  for i in range(g.shape[-1]):
+    div += torch.autograd.grad(g[..., i], inputs, grad_outputs=torch.ones_like(g[..., i]), create_graph=True)[0][..., i:i+1]
+    # div += (p-1) * g[..., i].abs().pow(p-2).view(g.shape[0],1) * d
+
+  return div
+
+
+#-----------------------------------------------------------------
+# Sample range
+def get_sample_ranges(points):
+  xmin = points[:,0].min()
+  xmax = points[:,0].max()
+  ymin = points[:,1].min()
+  ymax = points[:,1].max()
+  dx = xmax - xmin
+  dy = ymax - ymin
+  
+  if points.shape[1] == 3:
+    # sample_ranges.append(points[:,2].min())
+    # sample_ranges.append(points[:,2].max())
+    zmin = points[:,2].min()
+    zmax = points[:,2].max()
+    dz = zmax - zmin
+    ed = 0.2 * torch.sqrt(dx*dx + dy*dy + dz*dz)
+    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device) * 1.5
+  else:
+    ed = 0.2 * torch.sqrt(dx*dx + dy*dy)
+    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device) * 1.5
+
+  return sample_ranges
+
+
+#--------------------------------------------------------------------
+# Closest neighbor
+def find_kth_closest_d(inputs, k):
+  tree = KDTree(inputs.detach().cpu().numpy())
+  d_k = tree.query(inputs.detach().cpu().numpy(), k=k+1)[0][:,-1]
+  stddvt = torch.from_numpy(d_k).reshape((inputs.size()[0], 1)).type(torch.FloatTensor)
+
+  return stddvt.to(inputs.device)
+
+
+#----------------------------------------------------------------------
+# Distribution
+def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
+  # g = gaussian(points, stddvt)
+  # u = uniform(points, dist_size // 8)#.to(g.device)
+  u_x = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[0], sample_ranges[1])
+  u_y = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[2], sample_ranges[3])
+  if points.shape[1] == 2:
+    u = torch.cat((u_x, u_y), dim=-1)
+  else:
+    u_z = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[4], sample_ranges[5])
+    u = torch.cat((u_x, u_y, u_z), dim=-1)
+  
+  u = u.to(points.device)
+  # u = (torch.rand(dist_size//8, points.shape[1], device=points.device) * 2 - 1) * sample_ranges
+
+  g = points + (torch.randn_like(points) * stddvt)
+
+  return torch.cat((u,g))
