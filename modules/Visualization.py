@@ -21,11 +21,22 @@ def scatter_plot(points):
     plt.show()
 
 # Line graph for loss value
-def loss_graph(i, value):
-  plt.plot(i, value)
-  plt.xlabel('Epoch')
-  plt.ylabel('Loss value')
+def loss_graph(i, values):
+  plt.figure(figsize=(12,3))
+  plt.subplot(1, 2, 1)
+  plt.plot(i, values[:, 0], label='Total')
+  plt.xlabel('Iterations')
+  plt.ylabel('Value')
+  plt.title('Total Loss Value')
+
+  plt.subplot(1, 2, 2)
+  plt.plot(i, values[:, 1], label='Surface')
+  plt.plot(i, values[:, 2], label='Normals')
+  plt.plot(i, values[:, 3], label='Constraint')
+  plt.xlabel('Iterations')
+  plt.ylabel('Value')
   plt.title('Loss Value')
+  plt.legend()
   plt.show()
 
 # Visualization for 2D dataset
@@ -129,7 +140,7 @@ def grid_from_torch(points, resx=50, resy=50, resz=50, device='cpu'):
 # SAMPLING
 
 # Neural Network as function
-def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, g_norm_output_path=None, device='cpu'):
+def nn_sampling(model, xx, yy, zz=None, p=2, vtk_output_path=None, constraint_output=None, device='cpu'):
   # Evaluate function on each grid point
   resx = xx.shape[0]
   resy = yy.shape[0]
@@ -153,17 +164,12 @@ def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, g_norm_output_path
   else: 
     z = torch.reshape(z, (resx,resy, resz))
 
-  if g_norm_output_path is not None:
+  if constraint_output is not None:
     # Compute grad on each grid point
-    x = torch.autograd.Variable(tt, requires_grad=True)
-    x = x.to(device)
-    f = model(x)
-    g = torch.autograd.grad(outputs=f, inputs=x, 
-                        grad_outputs=torch.ones(f.size()).to(device), 
-                        create_graph=True, retain_graph=True, 
-                        only_inputs=True)[0]
+    tt.requires_grad = True
+    g = Operation.laplacian(model, tt, p=p)
 
-    np.savetxt(g_norm_output_path, g.detach().cpu())
-    print("Norm of gradient saved")
+    np.savetxt(constraint_output, g.detach().cpu())
+    print("Constraint value saved")
 
   return z
