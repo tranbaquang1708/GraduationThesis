@@ -20,24 +20,41 @@ def scatter_plot(points):
     ax_points.scatter(points[:,0], points[:,1], points[:,2])
     plt.show()
 
+
 # Line graph for loss value
+def show_loss_figure(loss_path):
+  loss_value = np.load(loss_path)
+  loss_graph(loss_value[:,0], loss_value[:,-4:])
+
+
 def loss_graph(i, values):
-  plt.figure(figsize=(12,3))
-  plt.subplot(1, 2, 1)
+  plt.figure(figsize=(12,10))
+  plt.subplot(2, 2, 1)
   plt.plot(i, values[:, 0], label='Total')
-  plt.xlabel('Iterations')
+  plt.xlabel('Epochs')
   plt.ylabel('Value')
   plt.title('Total Loss Value')
 
-  plt.subplot(1, 2, 2)
-  plt.plot(i, values[:, 1], label='Surface')
-  plt.plot(i, values[:, 2], label='Normals')
-  plt.plot(i, values[:, 3], label='Constraint')
-  plt.xlabel('Iterations')
+  plt.subplot(2, 2, 2)
+  plt.plot(i, values[:, 1])
+  plt.xlabel('Epochs')
   plt.ylabel('Value')
-  plt.title('Loss Value')
-  plt.legend()
+  plt.title('Geo loss')
+
+  plt.subplot(2, 2, 3)
+  plt.plot(i, values[:, 2])
+  plt.xlabel('Epochs')
+  plt.ylabel('Value')
+  plt.title('Grad Loss')
+
+  plt.subplot(2, 2, 4)
+  plt.plot(i, values[:, 3], label='Constraint')
+  plt.xlabel('Epochs')
+  plt.ylabel('Value')
+  plt.title('Laplacian Loss')
+
   plt.show()
+
 
 # Visualization for 2D dataset
 def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, filled_contour=True):
@@ -159,17 +176,15 @@ def nn_sampling(model, xx, yy, zz=None, p=2, vtk_output_path=None, constraint_ou
     Operation.save_vtk(vtk_output_path, tt, resx, resy, resz, z)
     print("VTK file saved")
 
+  if constraint_output is not None:
+    tt.requires_grad = True
+    Operation.save_constraint_values(constraint_output, model, tt)
+    
+    print("Constraint value saved")
+
   if zz is None:
     z = torch.reshape(z, (resx,resy))
   else: 
     z = torch.reshape(z, (resx,resy, resz))
-
-  if constraint_output is not None:
-    # Compute grad on each grid point
-    tt.requires_grad = True
-    g = Operation.laplacian(model, tt, p=p)
-
-    np.savetxt(constraint_output, g.detach().cpu())
-    print("Constraint value saved")
 
   return z
