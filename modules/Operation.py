@@ -11,50 +11,51 @@ from modules import Visualization
 
 
 # Read text file and output dataset tensor and normal_vectors tensor
-def read_txt2(filename, device='cpu'):
-  onsurface_points = np.zeros((0,2))
-  shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
-  first_point = np.zeros((1,2))
-  last_point = np.zeros((1,2))
-
+def read_txt2(filename, k_distance=50, device='cpu'):
   with open(filename, 'r') as f:
-    for c in range(int(f.readline())):
-      num_of_verticles = int(f.readline())
+    num_objs = int(f.readline())
+    num_verts = int(f.readline())
 
-      first_point[0] = np.loadtxt(f, max_rows=1)
-      middle_points = np.loadtxt(f, max_rows=num_of_verticles-2)
-      last_point[0] = np.loadtxt(f, max_rows=1)
+    points = np.loadtxt(f, max_rows=num_verts)
+    if ((points[0] == points[-1]).all()):
+      points = points[:-1]
+    shifted_points = np.roll(points, -1, axis=0)
 
-      # Onsuface points order: first_point,middle_points,last_point
-      # Shifted points order:  middle_points,last_point,first_point
-      onsurface_points = np.concatenate((onsurface_points, first_point))    # Onsurface: first_point
-      onsurface_points = np.concatenate((onsurface_points, middle_points))  # Onsurface: middle_points
-      shifted_points = np.concatenate((shifted_points, middle_points))      # Shifted: middle_points
-      # Remove the last point if it is the same as the first point
-      if np.not_equal(last_point,first_point).any():
-        onsurface_points = np.concatenate((onsurface_points,last_point))    # Onsurface: last_point
-        shifted_points = np.concatenate((shifted_points,last_point))        # Shifted: last_point
-      shifted_points = np.concatenate((shifted_points,first_point))         # Shifted: first_point
+    for obj in range(num_objs-1):
+      num_verts = int(f.readline())
+
+      p = np.loadtxt(f, max_rows=num_verts)
+      if ((p[0] == p[-1]).all()):
+        p = p[:-1]
+
+      points = np.concatenate((points, p))
+      shifted_points = np.concatenate((shifted_points, np.roll(p, -1, axis=0)))
 
   # Vector of 2 consecutive points
-  vectors = shifted_points - onsurface_points
+  vectors = shifted_points - points
   # Getting normal vectors
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
 
-  d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
+  d = torch.from_numpy(points).float().to(device)
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
 
-  return d,n
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 # Read from file, remove some points and output dataset tensor and normal_vectors tensor
 # p: the proportion of points taken, value range [0,1]
-def read_txt_omit2(filename, p='1', device='cpu'):
+def read_txt_omit2(filename, p='1', k_distance=50, device='cpu'):
   onsurface_points = np.zeros((0,2))
   shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
   first_point = np.zeros((1,2))
@@ -90,18 +91,24 @@ def read_txt_omit2(filename, p='1', device='cpu'):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
 
-  return d,n
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 # Sample points on a circle
-def circle_dataset(device='cpu'):
+def circle_dataset(k_distance=50, device='cpu'):
 	# Points
   num_on_points = 100
   num_points = 3 * num_on_points
@@ -120,11 +127,20 @@ def circle_dataset(device='cpu'):
   n = torch.zeros_like(v)
   n[:,0] = -v[:,1]
   n[:,1] = v[:,0]
+  n.to(device)
 
-  return d.to(device),n.to(device)
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 ## 3D
-def read_txt3(filename, device='cpu'):
+def read_txt3(filename, k_distance=50, device='cpu'):
   with open(filename, 'r') as f:
     raw_data = np.loadtxt(f)
   onsurface_points, vectors = np.hsplit(raw_data, 2)
@@ -132,81 +148,17 @@ def read_txt3(filename, device='cpu'):
   normal_vectors = -vectors/norm
   
   d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
+
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
   
-  return d, n
-
-# def read_txt3_to_batch(file_pointer, batch_size, line_indices, device='cpu'):
-#   points = np.zeros((0,3))
-#   normal_vectors = np.zeros((0,3))
-#   print(line_indices)
-
-#   # with open(filename, 'r') as f:
-#   chosen = sorted(random.sample(line_indices, batch_size))
-#   # print(chosen)
-
-#   for offset in line_indices:
-#     print(offset)
-#     file_pointer.seek(offset)
-#     line = np.loadtxt(file_pointer, max_rows=1)
-#     # line = file_pointer.readline()
-#     # print(line)
-#     # line = np.fromstring(file_pointer.readline(), sep=' ')
-#     # line = np.fromstring(line, sep=' ')
-#     print(line)
-#     point, normal_vector = np.hsplit(line, 2)
-#     print('next')
-#     points = np.append(points, [point], axis=0)
-#     normal_vectors = np.append(normal_vectors, [normal_vector], axis=0)
-
-#   d = torch.from_numpy(points).float().to(device)
-#   d.requires_grad = True
-#   n = torch.from_numpy(normal_vectors).float().to(device)
-#   n.requires_grad = True
-  
-#   return d, n 
-
-def read_txt3_to_batch(data_file, batch_size, num_of_lines, device):
-  points = np.zeros((0,3))
-  normal_vectors = np.zeros((0,3))
-
-  # Uniformly sample random points
-  chosen = sorted(random.sample(range(num_of_lines), batch_size))
-  
-  with open(data_file, 'r') as f:
-    for i, line in enumerate(f):
-      if i in chosen:
-        line = np.fromstring(line, sep=' ')
-        point, normal_vector = np.hsplit(line, 2)
-        points = np.append(points, [point], axis=0)
-        normal_vectors = np.append(normal_vectors, [normal_vector], axis=0)
-        if i == chosen[-1]:
-          break
-
-  # print(points)
-  d = torch.from_numpy(points).float().to(device)
-  d.requires_grad = True
-  n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
-  
-  return d, n 
-
-# Read through file and create line indices
-def line_indexing(filename):
-  s = [0]
-  with open(filename, 'r') as f:
-    line_indices = [s.append(s[0]+len(n)) or s.pop(0) for n in f]
-
-  return line_indices
-
-def get_num_of_lines(data_file):
-  with open(data_file) as f:
-    for i, l in enumerate(f):
-      pass
-
-  return i + 1
+  return data
 
 
 #-----------------------------------------------------
@@ -242,6 +194,15 @@ def save_vtk(filename, tt, resx, resy, resz, z):
     f.write('\n')
 
 
+def save_constraint_values(output_path, model, points):
+  p = 2
+  point_batches = torch.utils.data.DataLoader(points, batch_size=8)
+  g = torch.empty((0,1))
+  for point_batch in point_batches:
+    g = torch.cat((g, laplacian(model, point_batch, p=p, create_graph=False)))
+
+  np.savetxt(output_path, g.detach().cpu())
+
 #---------------------------------------------
 # Loss value
 
@@ -254,22 +215,14 @@ def load_loss_values(filename):
   except:
     loss_value = np.empty([0,5])
     print('No previous loss value found.')
-    start = 0
+    start = -1
 
   return loss_value, start
-
-
-# Long list to list of lists
-def chunks(lst, n):
-  for i in range(0, len(lst), n):
-    yield lst[i:i + n]
 
 
 #------------------------------------------------
 # Compute grad
 def compute_grad(inputs, outputs):
-  # var = torch.autograd.Variable(points, requires_grad=True).to(points.device)
-  # outputs = model(var)
   g = torch.autograd.grad(outputs=outputs,
                           inputs=inputs, 
                           grad_outputs=torch.ones_like(outputs, requires_grad=False, device=outputs.device), 
@@ -281,12 +234,10 @@ def compute_grad(inputs, outputs):
 
 def laplacian(model, inputs, p=2):
   g = compute_grad(inputs, model(inputs))
-  # g = g.abs().pow(p-2) * g
 
   div = 0.
   for i in range(g.shape[-1]):
     div += torch.autograd.grad(g[..., i], inputs, grad_outputs=torch.ones_like(g[..., i]), create_graph=True)[0][..., i:i+1]
-    # div += (p-1) * g[..., i].abs().pow(p-2).view(g.shape[0],1) * d
 
   return div
 
@@ -302,8 +253,6 @@ def get_sample_ranges(points):
   dy = ymax - ymin
   
   if points.shape[1] == 3:
-    # sample_ranges.append(points[:,2].min())
-    # sample_ranges.append(points[:,2].max())
     zmin = points[:,2].min()
     zmax = points[:,2].max()
     dz = zmax - zmin
@@ -328,9 +277,8 @@ def find_kth_closest_d(inputs, k):
 
 #----------------------------------------------------------------------
 # Distribution
-def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
-  # g = gaussian(points, stddvt)
-  # u = uniform(points, dist_size // 8)#.to(g.device)
+def uniform_gaussian(points, sample_ranges, stddvt):
+  dist_size = points.shape[1]
   u_x = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[0], sample_ranges[1])
   u_y = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[2], sample_ranges[3])
   if points.shape[1] == 2:
@@ -340,8 +288,9 @@ def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
     u = torch.cat((u_x, u_y, u_z), dim=-1)
   
   u = u.to(points.device)
-  # u = (torch.rand(dist_size//8, points.shape[1], device=points.device) * 2 - 1) * sample_ranges
 
-  g = points + (torch.randn_like(points) * stddvt)
+
+  g = points + (torch.randn_like(points) * stddvt.view(stddvt.shape[0], 1))
+  
 
   return torch.cat((u,g))
