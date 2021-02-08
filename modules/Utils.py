@@ -11,7 +11,7 @@ from modules import Visualization
 
 
 # Read text file and output dataset tensor and normal_vectors tensor
-def read_txt2(filename, device='cpu'):
+def read_txt2(filename, k_distance=50, device='cpu'):
   onsurface_points = np.zeros((0,2))
   shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
   first_point = np.zeros((1,2))
@@ -42,19 +42,25 @@ def read_txt2(filename, device='cpu'):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
 
-  return d,n
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 # Read from file, remove some points and output dataset tensor and normal_vectors tensor
 # p: the proportion of points taken, value range [0,1]
-def read_txt_omit2(filename, p='1', device='cpu'):
+def read_txt_omit2(filename, k_distance=50, p='1', device='cpu'):
   onsurface_points = np.zeros((0,2))
   shifted_points = np.zeros((0,2)) # onsurface_points left shifted by 1
   first_point = np.zeros((1,2))
@@ -94,14 +100,20 @@ def read_txt_omit2(filename, p='1', device='cpu'):
   normal_vectors[:,1] = np.divide(vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
 
-  return d,n
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 # Sample points on a circle
-def circle_dataset(device='cpu'):
+def circle_dataset(k_distance=None, device='cpu'):
 	# Points
   num_on_points = 100
   num_points = 3 * num_on_points
@@ -111,7 +123,6 @@ def circle_dataset(device='cpu'):
   d[:,0] = radius*np.cos(thetas)
   d[:,1] = radius*np.sin(thetas)
   d = torch.from_numpy(d).float().to(device)
-  d.requires_grad = True
 
   # Normal vectors
   d_shifted = torch.roll(d, -1, 0)
@@ -121,22 +132,37 @@ def circle_dataset(device='cpu'):
   n[:,0] = -v[:,1]
   n[:,1] = v[:,0]
 
-  return d.to(device),n.to(device)
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+    
+  data.requires_grad = True
+  
+  return data
 
 ## 3D
-def read_txt3(filename, device='cpu'):
+def read_txt3(filename, k_distance=None, device='cpu'):
   with open(filename, 'r') as f:
     raw_data = np.loadtxt(f)
   onsurface_points, vectors = np.hsplit(raw_data, 2)
-  norm = np.linalg.norm(vectors, axis=0)
-  normal_vectors = vectors/norm
   
   d = torch.from_numpy(onsurface_points).float().to(device)
-  d.requires_grad = True
+
+  norm = np.linalg.norm(vectors, axis=0)
+  normal_vectors = vectors/norm
   n = torch.from_numpy(normal_vectors).float().to(device)
-  n.requires_grad = True
+
+  data = torch.cat((d,n), dim=-1)
+
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(d, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+
+  data.requires_grad_()
   
-  return d, n
+  return data
 
 
 #---------------------------------------------
@@ -246,8 +272,11 @@ def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
     u = torch.cat((u_x, u_y, u_z), dim=-1)
   
   u = u.to(points.device)
+  u.requires_grad = True
 
 
   g = points + (torch.randn_like(points) * stddvt)
 
-  return torch.cat((u,g))
+  distribution = torch.cat([u,g])
+
+  return distribution

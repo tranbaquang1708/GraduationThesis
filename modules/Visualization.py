@@ -51,6 +51,7 @@ def loss_graph(i, values):
 
 def show_loss_figure(loss_path):
   loss_value = np.load(loss_path)
+  print(loss_value)
   loss_graph(loss_value[:,0], loss_value[:,-4:])
 
 # Visualization for 2D dataset
@@ -109,11 +110,37 @@ def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=
     plt.tight_layout()
     plt.show()
 
+    fig = plt.figure(figsize=(10,10))
+    ax_surface = fig.add_subplot(111, projection='3d')
+    mesh = Poly3DCollection(verts[faces])
+    mesh.set_edgecolor('k')
+    ax_surface.add_collection3d(mesh)
+    ax_surface.set_xlim(0, 50)
+    ax_surface.set_ylim(0, 50)
+    ax_surface.set_zlim(0, 50)
+    plt.tight_layout()
+    ax_surface.view_init(90,45)
+    plt.show()
+
+    fig = plt.figure(figsize=(10,10))
+    ax_surface = fig.add_subplot(111, projection='3d')
+    mesh = Poly3DCollection(verts[faces])
+    mesh.set_edgecolor('k')
+    ax_surface.add_collection3d(mesh)
+    ax_surface.set_xlim(0, 50)
+    ax_surface.set_ylim(0, 50)
+    ax_surface.set_zlim(0, 50)
+    plt.tight_layout()
+    ax_surface.view_init(45,90)
+    plt.show()
+
+
+
 #----------------------------------------------------------------------
 # GRID
 
 # Create a grid from torch tensot
-def grid_from_torch(points, resx=50, resy=50, resz=50, device='cpu'):
+def grid_from_torch(points, resx=32, resy=32, resz=32, device='cpu'):
   dims = points.shape[1]
 
   xmin = torch.min(points[:,0]).item()
@@ -129,7 +156,7 @@ def grid_from_torch(points, resx=50, resy=50, resz=50, device='cpu'):
 
     x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
     y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
-
+    
     xx, yy = torch.meshgrid(x, y)
 
     return xx.to(device), yy.to(device)
@@ -157,12 +184,12 @@ def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output=
   with torch.no_grad():
     # Evaluate function on each grid point
     resx = xx.shape[0]
-    resy = yy.shape[0]
+    resy = yy.shape[1]
     if zz is None:
       dimg = resx * resy
       tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
     else:
-      resz = zz.shape[0]
+      resz = zz.shape[2]
       dimg = resx * resy * resz
       tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
     
@@ -176,10 +203,7 @@ def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output=
 
     if constraint_output is not None:
       # Compute grad on each grid point
-      g = torch.autograd.grad(outputs=z, inputs=tt, 
-                          grad_outputs=torch.ones(z.size()).to(device), 
-                          create_graph=True, retain_graph=True, 
-                          only_inputs=True)[0]
+      g = Utils.compute_grad(tt, z)
 
       np.savetxt(g_norm_output_path, g.detach().cpu())
       print("Norm of gradient saved")

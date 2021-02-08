@@ -8,7 +8,7 @@ class Implicit(nn.Module):
     super().__init__()
 
     d_in = dimension
-    dims = [512, 512, 512, 512, 512, 512, 512, 512]
+    dims = [ 512, 512, 512, 512, 512, 512, 512, 512 ]
     beta = 100
     skip_in = [4]
     radius_init = 1
@@ -70,9 +70,9 @@ def save_model(path, model, optimizer, scheduler):
 # Load model, optimizer and scheduler
 def load_model(path, dimension=3, device='cpu'):
   model = Implicit(dimension).to(device)
-  optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+  optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
   scheduler_steps = []
-  for i in range(8):
+  for i in range(6):
     scheduler_steps.append(2000 * (i+1))
   scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=scheduler_steps, gamma=0.5)
 
