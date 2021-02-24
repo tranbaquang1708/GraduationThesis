@@ -12,8 +12,9 @@ from modules import Visualization, Utils
 def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_output_path=None, device='cpu'):
   print('Setting up')
 
-  lb = 1.0
-  tau = 0.1
+  geo_coeff = 1.0
+  normal_coeff = 1.0
+  constraint_coeff = 0.1
 
   loss_checkpoint_freq = 20
 
@@ -49,15 +50,6 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
 
     batches = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True)
 
-    # Seperate data into batches
-    # index_batch = np.random.choice(data.shape[0], batch_size, False)
-    # # point_batch = points[index_batch]
-
-    # cur_data = data[index_batch]
-    # 
-
-    batches = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True)
-
     for batch in batches:
 
       point_batch = batch[:,0:dim]
@@ -87,13 +79,33 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
       # grad(f)-normals
       normal_grad = Utils.compute_grad(point_batch, f_data)
       grad_loss = (normal_grad - normal_batch).norm(2, dim=1).mean()
+      # grad_loss = (1 - F.cosine_similarity(normal_grad, normal_batch, dim=-1)).mean()
 
       # Constraint
+      #Eikonal
       constraint_grad = Utils.compute_grad(distribution, f_dist)
       constraint = ((constraint_grad.norm(2, dim=-1) - 1) ** 2).mean()
-      
+      # all_grad = torch.cat((normal_grad, constraint_grad), dim=0)
+      # constraint = ((all_grad.norm(2, dim=-1) - 1) ** 2).mean()
 
-      loss = geo_loss + lb * grad_loss + tau * constraint
+      # Laplacian
+      # constraint_grad = Utils.compute_laplacian(distribution, f_dist)
+      # constraint = ((constraint_grad.norm(2, dim=-1) - 1) ** 2).mean()
+
+      # Variational
+      # constraint_grad = Utils.compute_grad(distribution, f_dist)
+      # constraint = 0.5 * (constraint_grad.norm(2, dim=-1))**2 - f_dist.abs()
+      # constraint = constraint.mean().abs()
+      
+      # Siren
+      off_coeff = 1.0
+      alpha = 100.0
+      off_surface = torch.exp(-alpha * f_dist.abs()).mean()
+      
+      loss = geo_coeff * geo_loss + normal_coeff * grad_loss + constraint_coeff * constraint + off_coeff * off_surface
+
+      # loss = geo_coeff * geo_loss + normal_coeff * grad_loss + constraint_coeff * constraint
+
       
 
       loss.backward()
@@ -106,6 +118,10 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
       loss_value = np.append(loss_value, [[i, loss.item(), geo_loss.item(), grad_loss.item(), constraint.item()]], axis=0)
       print('Epoch:', i+1, '  Loss:', loss.item(), '  Learning rate:', optimizer.param_groups[0]["lr"])
       print('Surface loss:' , geo_loss.item(), '  Normal loss:', grad_loss.item(), '  Constraint:', constraint.item())
+      
+      # Siren
+      print('Off-surface constraint: ', off_surface.item())
+      
       print()
 
 
