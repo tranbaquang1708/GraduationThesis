@@ -39,23 +39,22 @@ def loss_graph(i, values):
   plt.plot(i, values[:, 2])
   plt.xlabel('Iterations')
   plt.ylabel('Value')
-  plt.title('Grad Loss')
+  plt.title('Normal Loss')
 
   plt.subplot(2, 2, 4)
   plt.plot(i, values[:, 3], label='Constraint')
   plt.xlabel('Iterations')
   plt.ylabel('Value')
-  plt.title('Eikonal Loss')
+  plt.title('Constraint Loss')
 
   plt.show()
 
 def show_loss_figure(loss_path):
   loss_value = np.load(loss_path)
-  print(loss_value)
   loss_graph(loss_value[:,0], loss_value[:,-4:])
 
 # Visualization for 2D dataset
-def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, surface=True, filled_contour=True):
+def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled_contour, func_eval):
   # Points
   if scatter:
     plt.figure(figsize=(8,4))
@@ -72,7 +71,7 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
   # Surface
   if surface:
     plt.figure(figsize=(8,4))
-    h_object = plt.contour(xx,yy, z, levels=[0.0], colors='c')
+    h_object = plt.contour(xx,yy, z, levels=[0.])
     h_object.ax.axis('equal')
     plt.title('Contour Plot')
     plt.show()
@@ -80,9 +79,68 @@ def visualize2(dataset, normal_vectors, xx, yy, z, scatter=True, vecfield=True, 
   if filled_contour:
     plt.figure(figsize=(8,4))
     hf = plt.contourf(xx,yy,z)
+    plt.colorbar(ticks=[z.min(), 0., z.max()])
     hf.ax.axis('equal')
+    h_o = plt.contour(xx,yy, z, levels=[0.], colors='black')
+    h_o.ax.axis('equal')
     plt.title('Filled Contour Plot')
     plt.show()
+  if func_eval == True:
+    plt.figure(figsize=(8,4))
+    h_object = plt.contour(xx, yy, z, levels=[0.])
+    h_object.ax.axis('equal')
+    h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
+    plt.show()
+
+def plot_tucker_normalized(model, xx, yy):
+  resx = xx.shape[0]
+  resy = yy.shape[1]
+
+  dimg = resx * resy
+  tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+
+  tt.requires_grad = True
+  z = Utils.tucker_normalize(tt, model(tt))
+
+  z = torch.reshape(z, (resx,resy))
+
+  plt.figure(figsize=(8,4))
+  hf = plt.contourf(xx.detach().cpu().numpy(),yy.detach().cpu().numpy(),z.detach().cpu().numpy())
+  plt.colorbar(ticks=[0])
+  hf.ax.axis('equal')
+  plt.title('Tucker Normalized')
+  plt.show()
+
+  lap = Utils.compute_laplacian(tt, model(tt))
+  lap = torch.reshape(lap, (resx, resy))
+
+  plt.figure(figsize=(8,4))
+  h_lap = plt.contourf(xx.detach().cpu().numpy(),yy.detach().cpu().numpy(), lap.detach().cpu().numpy())
+  plt.colorbar(ticks=[0])
+  h_lap.ax.axis('equal')
+  plt.title('Laplacian')
+  plt.show()
+
+
+def visualize2(model, data, resx=64, resy=64, 
+                constraint_output_path=None, vtk_output_path=None,
+                scatter=True, vecfield=True, surface=True, filled_contour=True, 
+                tucker_normalized=True, func_eval=True,
+                device='cpu'):
+  xx, yy = grid_from_torch(data[:,0:2], resx, resy, device=device)
+  z = nn_sampling(model, xx, yy, zz=None,
+                  constraint_output_path=constraint_output_path,
+                  vtk_output_path = vtk_output_path,
+                  plot_hist = False,
+                  device=device)
+
+  plot2(data[:,0:2].detach().cpu().numpy(), data[:,2:4].detach().cpu().numpy(), 
+        xx.detach().cpu().numpy(), yy.detach().cpu().numpy(), z.detach().cpu().numpy(), 
+        scatter=scatter, vecfield=vecfield, surface=surface, filled_contour=filled_contour, func_eval=func_eval)
+
+  if tucker_normalized == True:
+    plot_tucker_normalized(model, xx, yy)
+
 
 # Visualization for 3D dataset
 def visualize3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=True):
@@ -179,38 +237,41 @@ def grid_from_torch(points, resx=32, resy=32, resz=32, device='cpu'):
 #-------------------------------------------------------------------------
 # SAMPLING
 
+
+
 # Neural Network as function
-def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output=None, device='cpu'):
-  with torch.no_grad():
-    # Evaluate function on each grid point
-    resx = xx.shape[0]
-    resy = yy.shape[1]
-    if zz is None:
-      dimg = resx * resy
-      tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
-    else:
-      resz = zz.shape[2]
-      dimg = resx * resy * resz
-      tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
-    
-    z = model(tt)
+def nn_sampling(model, xx, yy, zz=None, plot_hist=False, vtk_output_path=None, constraint_output_path=None, device='cpu'):
+  # with torch.no_grad():
 
-    # Save z value
-    if vtk_output_path is not None:
-      Utils.save_vtk(vtk_output_path, tt, resx, resy, resz, z)
-      print("VTK file saved")
+  # Evaluate function on each grid point
+  resx = xx.shape[0]
+  resy = yy.shape[1]
+  if zz is None:
+    dimg = resx * resy
+    tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+  else:
+    resz = zz.shape[2]
+    dimg = resx * resy * resz
+    tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
+  
+  z = model(tt)
+
+  # Save z value
+  if vtk_output_path is not None:
+    Utils.save_vtk(vtk_output_path, tt, resx, resy, resz, z)
+    print("VTK file saved")
 
 
-    if constraint_output is not None:
-      # Compute grad on each grid point
-      g = Utils.compute_grad(tt, z)
+  if constraint_output_path is not None:
+    # Compute grad on each grid point
+    g = Utils.compute_grad(tt, z)
 
-      np.savetxt(g_norm_output_path, g.detach().cpu())
-      print("Norm of gradient saved")
+    np.savetxt(g_norm_output_path, g.detach().cpu())
+    print("Norm of gradient saved")
 
-    if zz is None:
-      z = torch.reshape(z, (resx,resy))
-    else: 
-      z = torch.reshape(z, (resx,resy, resz))
+  if zz is None:
+    z = torch.reshape(z, (resx,resy))
+  else: 
+    z = torch.reshape(z, (resx,resy, resz))
 
   return z
