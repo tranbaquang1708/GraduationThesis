@@ -96,8 +96,8 @@ def read_txt_omit2(filename, k_distance=50, p='1', device='cpu'):
   norm = np.linalg.norm(vectors, axis=1)
   normal_vectors = np.ones_like(vectors)
 
-  normal_vectors[:,0] = np.divide(-vectors[:,1],norm)
-  normal_vectors[:,1] = np.divide(vectors[:,0],norm)
+  normal_vectors[:,0] = np.divide(vectors[:,1],norm)
+  normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
   d = torch.from_numpy(onsurface_points).float().to(device)
   n = torch.from_numpy(normal_vectors).float().to(device)
@@ -216,7 +216,7 @@ def save_vtk(filename, tt, resx, resy, resz, z):
 
 
 #------------------------------------------------
-# Compute grad
+# Derivatives
 def compute_grad(inputs, outputs):
   g = torch.autograd.grad(outputs=outputs,
                           inputs=inputs, 
@@ -226,6 +226,20 @@ def compute_grad(inputs, outputs):
                           only_inputs=True)[0][:, -3:]
 
   return g
+
+def compute_laplacian(inputs, outputs, p=2):
+  g = compute_grad(inputs, outputs)
+
+  div = 0.
+  for i in range(g.shape[-1]):
+    div += torch.autograd.grad(g[..., i], inputs, grad_outputs=torch.ones_like(g[..., i]), create_graph=True)[0][..., i:i+1]
+
+  return div
+
+def tucker_normalize(inputs, outputs):
+  g_outputs_norm = compute_grad(inputs, outputs).norm(2, dim=-1).view(inputs.shape[0], 1)
+  
+  return torch.sqrt(g_outputs_norm**2 + 2*outputs) - g_outputs_norm
 
 #-----------------------------------------------------------------
 # Sample range
@@ -241,11 +255,11 @@ def get_sample_ranges(points):
     zmin = points[:,2].min()
     zmax = points[:,2].max()
     dz = zmax - zmin
-    ed = 0.15 * torch.sqrt(dx*dx + dy*dy + dz*dz)
-    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device) * 1.5
+    ed = 0.5 * torch.sqrt(dx*dx + dy*dy + dz*dz)
+    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device)
   else:
-    ed = 0.15 * torch.sqrt(dx*dx + dy*dy)
-    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device) * 1.5
+    ed = 0.5 * torch.sqrt(dx*dx + dy*dy)
+    sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device)
 
   return sample_ranges
 
@@ -262,6 +276,37 @@ def find_kth_closest_d(inputs, k):
 
 #----------------------------------------------------------------------
 # Distribution
+def uniform(dist_size, sample_ranges, dim=3, device='cpu'):
+  u_x = torch.FloatTensor(dist_size*2, 1).uniform_(sample_ranges[0], sample_ranges[1])
+  u_y = torch.FloatTensor(dist_size*2, 1).uniform_(sample_ranges[2], sample_ranges[3])
+  if dim == 2:
+    u = torch.cat((u_x, u_y), dim=-1)
+  else:
+    u_z = torch.FloatTensor(dist_size*2, 1).uniform_(sample_ranges[4], sample_ranges[5])
+    u = torch.cat((u_x, u_y, u_z), dim=-1)
+
+  u.requires_grad = True
+
+  return u.to(device)
+
+def uniform_far(points, dist_size, sample_ranges, dim=3, device='cpu'):
+  u_x = torch.FloatTensor(dist_size*10, 1).uniform_(sample_ranges[0], sample_ranges[1])
+  u_y = torch.FloatTensor(dist_size*10, 1).uniform_(sample_ranges[2], sample_ranges[3])
+  if dim == 2:
+    u = torch.cat((u_x, u_y), dim=-1)
+  else:
+    u_z = torch.FloatTensor(dist_size*5, 1).uniform_(sample_ranges[4], sample_ranges[5])
+    u = torch.cat((u_x, u_y, u_z), dim=-1)
+
+  tree = KDTree(points)
+  d = tree.query(u.numpy(), k=2)[0][:,-1]
+
+  u = u.to(device)
+  u = u[d>0.0008]
+  u.requires_grad = True
+
+  return u
+
 def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
   u_x = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[0], sample_ranges[1])
   u_y = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[2], sample_ranges[3])
