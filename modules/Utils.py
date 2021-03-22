@@ -217,7 +217,7 @@ def save_vtk(filename, tt, resx, resy, resz, z):
 
 #------------------------------------------------
 # Derivatives
-def compute_grad(inputs, outputs):
+def compute_grad(outputs, inputs):
   g = torch.autograd.grad(outputs=outputs,
                           inputs=inputs, 
                           grad_outputs=torch.ones_like(outputs, requires_grad=False, device=outputs.device), 
@@ -227,8 +227,8 @@ def compute_grad(inputs, outputs):
 
   return g
 
-def compute_laplacian(inputs, outputs, p=2):
-  g = compute_grad(inputs, outputs)
+def compute_laplacian(outputs, inputs, p=2):
+  g = compute_grad(outputs, inputs)
 
   g = (g.norm(2, dim=-1).view(g.shape[0],1))**(p-2) * g
 
@@ -238,10 +238,12 @@ def compute_laplacian(inputs, outputs, p=2):
 
   return div
 
-def tucker_normalize(inputs, outputs):
-  g_outputs_norm = compute_grad(inputs, outputs).norm(2, dim=-1).view(inputs.shape[0], 1)
-  
-  return torch.sqrt(g_outputs_norm**2 + 2*outputs) - g_outputs_norm
+def tucker_normalize(outputs, inputs):
+  g_norm = compute_grad(outputs, inputs).norm(2, dim=-1).view(inputs.shape[0], 1)  
+  denom = torch.sqrt(g_norm**2 + 2*(outputs.abs())) + g_norm
+
+  return (2*outputs)/denom
+
 
 #-----------------------------------------------------------------
 # Sample range
