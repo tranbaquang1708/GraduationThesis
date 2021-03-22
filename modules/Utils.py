@@ -230,6 +230,8 @@ def compute_grad(inputs, outputs):
 def compute_laplacian(inputs, outputs, p=2):
   g = compute_grad(inputs, outputs)
 
+  g = (g.norm(2, dim=-1).view(g.shape[0],1))**(p-2) * g
+
   div = 0.
   for i in range(g.shape[-1]):
     div += torch.autograd.grad(g[..., i], inputs, grad_outputs=torch.ones_like(g[..., i]), create_graph=True)[0][..., i:i+1]
@@ -255,10 +257,10 @@ def get_sample_ranges(points):
     zmin = points[:,2].min()
     zmax = points[:,2].max()
     dz = zmax - zmin
-    ed = 0.5 * torch.sqrt(dx*dx + dy*dy + dz*dz)
+    ed = torch.sqrt(dx*dx + dy*dy + dz*dz)
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device)
   else:
-    ed = 0.5 * torch.sqrt(dx*dx + dy*dy)
+    ed = torch.sqrt(dx*dx + dy*dy)
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device)
 
   return sample_ranges
@@ -290,12 +292,12 @@ def uniform(dist_size, sample_ranges, dim=3, device='cpu'):
   return u.to(device)
 
 def uniform_far(points, dist_size, sample_ranges, dim=3, device='cpu'):
-  u_x = torch.FloatTensor(dist_size*10, 1).uniform_(sample_ranges[0], sample_ranges[1])
-  u_y = torch.FloatTensor(dist_size*10, 1).uniform_(sample_ranges[2], sample_ranges[3])
+  u_x = torch.FloatTensor(dist_size*16, 1).uniform_(sample_ranges[0], sample_ranges[1])
+  u_y = torch.FloatTensor(dist_size*16, 1).uniform_(sample_ranges[2], sample_ranges[3])
   if dim == 2:
     u = torch.cat((u_x, u_y), dim=-1)
   else:
-    u_z = torch.FloatTensor(dist_size*5, 1).uniform_(sample_ranges[4], sample_ranges[5])
+    u_z = torch.FloatTensor(dist_size*16, 1).uniform_(sample_ranges[4], sample_ranges[5])
     u = torch.cat((u_x, u_y, u_z), dim=-1)
 
   tree = KDTree(points)
