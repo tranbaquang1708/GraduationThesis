@@ -45,6 +45,9 @@ def read_txt2(filename, k_distance=50, device='cpu'):
   normal_vectors[:,0] = np.divide(vectors[:,1],norm)
   normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
+  d_mean = onsurface_points.mean(axis=0)
+  onsurface_points = (onsurface_points - d_mean) * 10
+
   d = torch.from_numpy(onsurface_points).float().to(device)
   n = torch.from_numpy(normal_vectors).float().to(device)
 
@@ -129,8 +132,8 @@ def circle_dataset(k_distance=None, device='cpu'):
   v = d_shifted - d
   v = f.normalize(v, p=2, dim=1)
   n = torch.zeros_like(v)
-  n[:,0] = -v[:,1]
-  n[:,1] = v[:,0]
+  n[:,0] = v[:,1]
+  n[:,1] = -v[:,0]
 
   data = torch.cat((d,n), dim=-1)
 
@@ -177,7 +180,7 @@ def load_loss_values(filename):
   except:
     loss_value = np.empty([0,5])
     print('No previous loss value found.')
-    start = -1
+    start = 0
 
   return loss_value, start
 
@@ -230,7 +233,7 @@ def compute_grad(outputs, inputs):
 def compute_laplacian(outputs, inputs, p=2):
   g = compute_grad(outputs, inputs)
 
-  g = (g.norm(2, dim=-1).view(g.shape[0],1))**(p-2) * g
+  # g = (g.norm(2, dim=-1).view(g.shape[0],1))**(p-2) * g
 
   div = 0.
   for i in range(g.shape[-1]):
@@ -252,17 +255,19 @@ def get_sample_ranges(points):
   xmax = points[:,0].max()
   ymin = points[:,1].min()
   ymax = points[:,1].max()
-  dx = xmax - xmin
-  dy = ymax - ymin
+  # dx = xmax - xmin
+  # dy = ymax - ymin
   
   if points.shape[1] == 3:
     zmin = points[:,2].min()
     zmax = points[:,2].max()
-    dz = zmax - zmin
-    ed = torch.sqrt(dx*dx + dy*dy + dz*dz)
+    # dz = zmax - zmin
+    # ed = 0.05 * torch.sqrt(dx*dx + dy*dy + dz*dz)
+    ed = 0.5
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device)
   else:
-    ed = torch.sqrt(dx*dx + dy*dy)
+    # ed = torch.sqrt(dx*dx + dy*dy)
+    ed = 0.5
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device)
 
   return sample_ranges
@@ -311,6 +316,9 @@ def uniform_far(points, dist_size, sample_ranges, dim=3, device='cpu'):
 
   return u
 
+def gaussian(points, stddvt):
+  return points + (torch.randn_like(points) * stddvt)
+
 def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
   u_x = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[0], sample_ranges[1])
   u_y = torch.FloatTensor(dist_size//8, 1).uniform_(sample_ranges[2], sample_ranges[3])
@@ -329,3 +337,18 @@ def uniform_gaussian(points, dist_size, sample_ranges, stddvt):
   distribution = torch.cat([u,g])
 
   return distribution
+
+def get_off_surface_points(points, normals, magnitude):
+  tree = KDTree(points.detach().cpu())
+  n = np.arange(points.shape[0])
+
+  points_in = points - normals * magnitude
+  d_in = tree.query(points_in.detach().cpu(), k=1)[1]
+  points_in = torch.tensor(n==d_in).view(points.shape[0],1).to(points.device)
+
+  points_out = points + normals * magnitude
+  d_out = tree.query(points_out.detach().cpu(), k=1)[1]
+  points_out = torch.tensor(n==d_out).view(points.shape[0],1).to(points.device)
+
+  return points_in, points_out
+
