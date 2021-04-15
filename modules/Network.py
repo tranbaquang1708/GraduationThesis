@@ -68,9 +68,9 @@ class ImplicitBoundary(nn.Module):
 
     d_in = dimension
     # dims = [ 512, 512, 512, 512, 512, 512, 512, 512 ]
-    dims = [256, 256, 256, 256]
+    dims = [256, 256, 256, 256, 256, 256, 256, 256]
     beta = 100
-    skip_in = []
+    skip_in = [4]
     radius_init = 1
 
     dims = [d_in] + dims + [1]
@@ -159,6 +159,8 @@ class ImplicitConstraint(nn.Module):
     # self.activation = torch.cos
 
     self.modelf = modelf
+    for param in self.modelf.parameters():
+      param.requires_grad = False
 
   def forward(self, inputs):
     x = inputs
@@ -174,12 +176,8 @@ class ImplicitConstraint(nn.Module):
 
       if layer < self.num_layers - 2:
         x = self.activation(x)
-    # print((x * torch.tanh(1 * self.modelf(inputs))).shape)
-    # print(x.shape)
-    # print(inputs.shape)
-    # print()
 
-    return x * torch.tanh(1 * self.modelf(inputs))
+    return x * torch.tanh(10 * self.modelf(inputs))
 
 class SineLayer(nn.Module):    
   def __init__(self, in_features, out_features, bias=True,
