@@ -46,7 +46,8 @@ def read_txt2(filename, k_distance=50, device='cpu'):
   normal_vectors[:,1] = np.divide(-vectors[:,0],norm)
 
   d_mean = onsurface_points.mean(axis=0)
-  onsurface_points = (onsurface_points - d_mean) * 10
+  onsurface_points = (onsurface_points - d_mean) 
+  onsurface_points = onsurface_points / np.max(np.abs(onsurface_points))
 
   d = torch.from_numpy(onsurface_points).float().to(device)
   n = torch.from_numpy(normal_vectors).float().to(device)
@@ -150,11 +151,16 @@ def read_txt3(filename, k_distance=None, device='cpu'):
   with open(filename, 'r') as f:
     raw_data = np.loadtxt(f)
   onsurface_points, vectors = np.hsplit(raw_data, 2)
-  
-  d = torch.from_numpy(onsurface_points).float().to(device)
+
+
+  d_mean = onsurface_points.mean(axis=0)
+  onsurface_points = (onsurface_points - d_mean) 
+  onsurface_points = onsurface_points / np.max(np.abs(onsurface_points))
 
   norm = np.linalg.norm(vectors, axis=0)
   normal_vectors = vectors/norm
+
+  d = torch.from_numpy(onsurface_points).float().to(device)
   n = torch.from_numpy(normal_vectors).float().to(device)
 
   data = torch.cat((d,n), dim=-1)
@@ -263,11 +269,11 @@ def get_sample_ranges(points):
     zmax = points[:,2].max()
     # dz = zmax - zmin
     # ed = 0.05 * torch.sqrt(dx*dx + dy*dy + dz*dz)
-    ed = 0.5
+    ed = 0.2
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed, zmin-ed, zmax+ed], device=points.device)
   else:
     # ed = torch.sqrt(dx*dx + dy*dy)
-    ed = 0.5
+    ed = 0.2
     sample_ranges = torch.tensor([xmin-ed, xmax+ed, ymin-ed, ymax+ed], device=points.device)
 
   return sample_ranges
