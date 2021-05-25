@@ -69,48 +69,67 @@ def show_loss_figure(loss_path):
 
 
 # Plot constraint and Tucker Normalization
-def plot_additional(model, xx, yy, zz=None):
-  resx = xx.shape[0]
-  resy = yy.shape[1]
-
-  if zz is None:
-    dimg = resx * resy
-    tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+def plot_gradient(model, points):
+  grad = Utils.compute_grad(model(points), points).detach().cpu()
+  points = points.detach().cpu()
+  if points.shape[1] == 2:
+    h_grad = plt.quiver(points[:,0], points[:,1], grad[:,0], grad[:,1])
   else:
-    resz = zz.shape[2]
-    dimg = resx * resy * resz
-    tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
-
-  tt.requires_grad = True
-
-  # Plot Tucker Normalization
-  # z = Utils.tucker_normalize(model(tt), tt)
-  # z = torch.reshape(z, (resx,resy))
-  # plt.figure(figsize=(8,4))
-  # hf = plt.contourf(xx.detach().cpu().numpy(),yy.detach().cpu().numpy(),z.detach().cpu().numpy())
-  # plt.colorbar(ticks=[0])
-  # hf.ax.axis('equal')
-  # plt.title('Tucker Normalized')
-  # plt.show()
-
-  lap = Utils.compute_laplacian(model(tt), tt, p=2)
-
-  # Plot Laplacian on the grid
-  plt.figure(figsize=(8,4))
-  lap_grid = torch.reshape(lap, (resx,resy))
-  h_lap_ctf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),lap_grid.detach().cpu())
-  plt.colorbar(ticks=[lap.min().item(), 0., 1., lap.max().item()])
-  h_lap_ctf.ax.axis('equal')
-  plt.title('Laplacian Filled Contour Plot')
+    h_grad = plt.quiver(points[:,0], points[:,1], points[:,2], grad[:,0], grad[:,1], grad[:,2])
   plt.show()
   
-  # Plot histograms of Laplacian values on the grid
-  plt.hist(lap.detach().cpu().numpy())
-  plt.title('Laplacian')
-  plt.show()
-  plt.hist(lap[lap.abs()<2].detach().cpu().numpy())
-  plt.show()
+def plot_laplacian(model, xx, yy, zz=None):
+    resx = xx.shape[0]
+    resy = yy.shape[1]
+    if zz is None:
+      dimg = resx * resy
+      tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+    else:
+      resz = zz.shape[2]
+      dimg = resx * resy * resz
+      tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
+    tt.requires_grad = True
 
+    lap = Utils.compute_laplacian(model(tt), tt, p=8)
+    # Plot Laplacian on the grid
+    plt.figure(figsize=(8,4))
+    lap_grid = torch.reshape(lap, (resx,resy))
+    h_lap_ctf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),lap_grid.detach().cpu())
+    plt.colorbar(ticks=[lap.min().item(), 0., 1., lap.max().item()])
+    h_lap_ctf.ax.axis('equal')
+    plt.title('Laplacian Filled Contour Plot')
+    plt.show()
+    
+    # Plot histograms of Laplacian values on the grid
+    plt.hist(lap.detach().cpu().numpy())
+    plt.title('Laplacian')
+    plt.show()
+    plt.hist(lap[lap.abs()<2].detach().cpu().numpy())
+    plt.show()
+
+def compare_trimesh(model, nodes_path, segments_path, rescale=None):
+  segments = Utils.read_poly(segments_path, next(model.parameters()).device)
+  nodes = Utils.read_mesh2(nodes_path, rescale=rescale, device=next(model.parameters()).device)
+
+  is_boundary = nodes[:,-1]==1
+  points = nodes[:,0:2]
+  points = points[is_boundary]
+  stddvt = Utils.find_kth_closest_d(points, 10)
+  cpoints = Utils.gaussian(points, stddvt)
+  
+  h_cpoints = plt.scatter(cpoints[:,0].detach().cpu(), cpoints[:,1].detach().cpu(), s=2)
+  h_points = plt.scatter(points[:,0].detach().cpu(), points[:,1].detach().cpu(), s=2, c='black')
+  plt.show()
+  
+  poly_dists = torch.zeros((cpoints.shape[0], 1)).to(points.device)
+  for i in range(cpoints.shape[0]):
+    poly_dists[i] = Utils.dis_point2poly(cpoints[i], nodes, segments)
+
+  f_values = model(cpoints).abs()
+  diff = poly_dists-f_values
+
+  print('Function values vs exact distance:', str(diff.abs().mean().item()))
+  print('Mean of function values:', str(f_values.mean().item()))
 
 
 # Visualization for 2D dataset
@@ -155,7 +174,7 @@ def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled
 def visualize2(model, data, resx=64, resy=64, 
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True, filled_contour=True, 
-                additional=True, func_eval=True,
+                laplacian=True, func_eval=True, gradient=True,
                 device='cpu'):
   xx, yy = grid_from_torch(data[:,0:2], resx, resy, device=device)
   z = nn_sampling(model, xx, yy, zz=None,
@@ -167,8 +186,13 @@ def visualize2(model, data, resx=64, resy=64,
         xx.detach().cpu().numpy(), yy.detach().cpu().numpy(), z.detach().cpu().numpy(), 
         scatter=scatter, vecfield=vecfield, surface=surface, filled_contour=filled_contour, func_eval=func_eval)
 
-  if additional == True:
-    plot_additional(model, xx, yy)
+  if gradient:
+    plot_gradient(model, data[:,0:2])
+  if laplacian:
+    plot_laplacian(model, xx, yy)
+  # if trimesh_comparison:
+  #   print('model(x) vs d(x, triangle_mesh:', str(compare_trimesh(model, data[:,0:2], segments, data[:,-1].view(data.shape[0],1))))
+
 
 
 
@@ -356,7 +380,6 @@ def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output_
 
     np.savetxt(g_norm_output_path, g.detach().cpu())
     print("Norm of gradient saved")
-
 
 
   if zz is None:
