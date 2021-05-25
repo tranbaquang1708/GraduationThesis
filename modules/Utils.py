@@ -119,15 +119,24 @@ def read_txt_omit2(filename, k_distance=50, p='1', device='cpu'):
 
 
 
-def read_mesh2(filename, device='cpu'):
+def read_mesh2(filename, rescale=None, device='cpu'):
   with open(filename, 'r') as f:
     line1 = np.loadtxt(f, max_rows=1)
 
     raw_data = np.loadtxt(f)
-    vertices = raw_data[:,[1,2,-1]]
+    vertices = raw_data[:,[1,2]]
+    att = raw_data[:,-1].reshape(raw_data.shape[0],1)
 
-    data = torch.from_numpy(vertices).float().to(device)
+    if rescale is not None:
+      d_mean = vertices.mean(axis=0)
+      vertices = (vertices - d_mean)# * 10
+      vertices = rescale * vertices / np.max(np.abs(vertices))
+
+    data = np.concatenate((vertices, att), axis=1)
+    data = torch.from_numpy(data).float().to(device)
     data.requires_grad = True
+
+    # print(data)
 
   return data
 
@@ -135,7 +144,7 @@ def read_triangle(filename, device='cpu'):
   with open(filename, 'r') as f:
     line1 = np.loadtxt(f, max_rows=1)
 
-    raw_data = np.loadtxt(f)
+    raw_data = np.loadtxt(f, dtype='int')
     triangles = raw_data[:, 1:]
 
     if triangles.min() == 1:
@@ -143,6 +152,19 @@ def read_triangle(filename, device='cpu'):
       print('Change starting index to 0')
 
   return triangles
+
+def read_poly(filename, device='cpu'):
+  with open(filename, 'r') as f:
+    line1 = np.loadtxt(f, max_rows=1)
+    dim = int(line1[1])
+    line2 = np.loadtxt(f, max_rows=1)
+    nseg = int(line2[0])
+    raw_data = np.loadtxt(f, dtype='int', max_rows=nseg)
+    segments = raw_data[:, 1:dim+1]
+    if segments.min() == 1:
+      segments = segments-1
+
+  return segments
 
 
 # Sample points on a circle
@@ -214,10 +236,11 @@ def load_loss_values(filename):
     loss_value = np.load(filename)
     print('Loss values loaded')
     start = int(loss_value[-1,0])
-  except:
+  except Exception as e:
     loss_value = np.empty([0,6])
-    print('No previous loss value found.')
     start = 0
+    print('No previous loss value found.')
+    print(e)
 
   return loss_value, start
 
@@ -370,3 +393,25 @@ def uniform_gaussian(points, sample_ranges, stddvt):
 
   return distribution
 
+#-----------------------------------------------------
+#Distance to polygon
+def dis_point2poly(p, nodes, segments):
+  d = torch.tensor([float("inf")])
+  dim = p.shape[0]
+  
+  for segment in segments:
+    v1 = nodes[segment[0], 0:dim]
+    v2 = nodes[segment[1], 0:dim]
+    nd = dis_to_segment(p, v1, v2)
+    d = torch.min(d, nd)
+
+  return d
+
+def dis_to_segment(p, v1, v2):
+  param = torch.dot((p-v1),(v2-v1)) / (torch.linalg.norm(v2-v1)**2)
+  if param < 0:
+    return torch.linalg.norm(v1-p) # Euclidean distance
+  elif param > 1:
+    return torch.linalg.norm(v2-p)
+  else:
+    return torch.linalg.norm(p - (v1+param*(v2-v1)))
