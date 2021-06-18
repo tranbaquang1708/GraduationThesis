@@ -68,6 +68,39 @@ def show_loss_figure(loss_path):
 
 
 
+def compare_trimesh(model, nodes_path, segments_path, rescale=None, max_distance=0.5):
+  # Read nodes and segments from file
+  segments = Utils.read_poly(segments_path, next(model.parameters()).device)
+  nodes = Utils.read_mesh2(nodes_path, rescale=rescale, device=next(model.parameters()).device)
+
+  is_boundary = nodes[:,-1]==1
+  points = nodes[:,0:2]
+  bpoints = points[is_boundary]
+  points_inside = points[~is_boundary]
+  
+  # Exact distance
+  poly_dists = torch.zeros((points_inside.shape[0])).to(points.device)
+  for i in range(points_inside.shape[0]):
+    poly_dists[i] = Utils.dis_point2poly(points_inside[i], nodes, segments)
+  # Only keep points close to surface
+  is_close = poly_dists <= max_distance
+  close_poly_dists = poly_dists[is_close]
+  close_poly_dists = close_poly_dists.view(close_poly_dists.shape[0],1)
+  cpoints = points_inside[is_close]
+
+  f_values = model(cpoints).abs()
+  diff = poly_dists-f_values
+
+  h_cpoints = plt.scatter(cpoints[:,0].detach().cpu(), cpoints[:,1].detach().cpu(), s=2)
+  h_points = plt.scatter(bpoints[:,0].detach().cpu(), bpoints[:,1].detach().cpu(), s=2, c='black')
+  plt.show()
+
+  print('Function values vs exact distance: ', str(diff.abs().mean().item()))
+  print('Mean of function values on samples: ', str(f_values.mean().item()))
+  print('Mean of function values on boundary points: ', str(model(bpoints).abs().mean().item()))
+
+
+
 # Plot constraint and Tucker Normalization
 def plot_gradient(model, points):
   grad = Utils.compute_grad(model(points), points).detach().cpu()
@@ -78,85 +111,71 @@ def plot_gradient(model, points):
     h_grad = plt.quiver(points[:,0], points[:,1], points[:,2], grad[:,0], grad[:,1], grad[:,2])
   plt.show()
   
-def plot_laplacian(model, xx, yy, zz=None):
+def plot_laplacian(model, xx, yy, zz=None, p=2, outfile=None):
     resx = xx.shape[0]
     resy = yy.shape[1]
     if zz is None:
       dimg = resx * resy
-      tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+      tts = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
     else:
       resz = zz.shape[2]
       dimg = resx * resy * resz
-      tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
-    tt.requires_grad = True
+      tts = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
+    tts.requires_grad = True
+    tt_batches = torch.utils.data.DataLoader(tts, batch_size=4096, shuffle=False)
 
-    lap = Utils.compute_laplacian(model(tt), tt, p=8)
-    # Plot Laplacian on the grid
-    plt.figure(figsize=(8,4))
-    lap_grid = torch.reshape(lap, (resx,resy))
-    h_lap_ctf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),lap_grid.detach().cpu())
-    plt.colorbar(ticks=[lap.min().item(), 0., 1., lap.max().item()])
-    h_lap_ctf.ax.axis('equal')
-    plt.title('Laplacian Filled Contour Plot')
-    plt.show()
+    lap_arr = np.zeros((0,1))
+
+    for tt in tt_batches:
+      lap = Utils.compute_laplacian(model(tt), tt, p=p)
+      lap_arr = np.concatenate((lap_arr, lap.detach().cpu().numpy()))
+
+    # if zz is None:
+    # # Plot Laplacian on the grid
+    #   plt.figure(figsize=(8,4))
+    #   lap_grid = torch.reshape(lap, (resx,resy))
+    #   h_lap_ctf = plt.contourf(xx.detach().cpu(),yy.detach().cpu(),lap_grid.detach().cpu())
+    #   plt.colorbar(ticks=[lap.min().item(), 0., 1., lap.max().item()])
+    #   h_lap_ctf.ax.axis('equal')
+    #   plt.title('Laplacian Filled Contour Plot')
+    #   plt.show()
     
     # Plot histograms of Laplacian values on the grid
-    plt.hist(lap.detach().cpu().numpy())
+    plt.hist(lap_arr)
     plt.title('Laplacian')
     plt.show()
-    plt.hist(lap[lap.abs()<2].detach().cpu().numpy())
+    plt.hist(lap_arr[np.abs(lap_arr)<2])
     plt.show()
 
-def compare_trimesh(model, nodes_path, segments_path, rescale=None):
-  segments = Utils.read_poly(segments_path, next(model.parameters()).device)
-  nodes = Utils.read_mesh2(nodes_path, rescale=rescale, device=next(model.parameters()).device)
-
-  is_boundary = nodes[:,-1]==1
-  points = nodes[:,0:2]
-  points = points[is_boundary]
-  stddvt = Utils.find_kth_closest_d(points, 10)
-  cpoints = Utils.gaussian(points, stddvt)
-  
-  h_cpoints = plt.scatter(cpoints[:,0].detach().cpu(), cpoints[:,1].detach().cpu(), s=2)
-  h_points = plt.scatter(points[:,0].detach().cpu(), points[:,1].detach().cpu(), s=2, c='black')
-  plt.show()
-  
-  poly_dists = torch.zeros((cpoints.shape[0], 1)).to(points.device)
-  for i in range(cpoints.shape[0]):
-    poly_dists[i] = Utils.dis_point2poly(cpoints[i], nodes, segments)
-
-  f_values = model(cpoints).abs()
-  diff = poly_dists-f_values
-
-  print('Function values vs exact distance:', str(diff.abs().mean().item()))
-  print('Mean of function values:', str(f_values.mean().item()))
 
 
 # Visualization for 2D dataset
 def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled_contour, func_eval):
   # Points
   if scatter:
-    plt.figure(figsize=(8,4))
+    # plt.figure(figsize=(8,4))
     h_points = plt.scatter(dataset[:,0], dataset[:,1], s=1)
+    ax = plt.gca()
+    ax.axis('equal')
     plt.title('Point-cloud')
     plt.show()
   # Vector field
   if vecfield:
-    plt.figure(figsize=(8,4))
+    # plt.figure(figsize=(8,4))
     h_vector = plt.quiver(dataset[:,0], dataset[:,1], normal_vectors[:,0], normal_vectors[:,1])
     h_vector.ax.axis('equal')
     plt.title('Normal Vectors')
     plt.show()
   # Surface
   if surface:
-    plt.figure(figsize=(8,4))
+    # plt.figure(figsize=(8,4))
     h_object = plt.contour(xx,yy, z, levels=[0.])
     h_object.ax.axis('equal')
     plt.title('Contour Plot')
     plt.show()
   # Filled contour
   if filled_contour:
-    plt.figure(figsize=(8,4))
+    # plt.figure(figsize=(8,4))
     hf = plt.contourf(xx,yy,z)
     plt.colorbar(ticks=[z.min(), 0., z.max()])
     hf.ax.axis('equal')
@@ -165,7 +184,7 @@ def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled
     plt.title('Filled Contour Plot')
     plt.show()
   if func_eval == True:
-    plt.figure(figsize=(8,4))
+    # plt.figure(figsize=(8,4))
     h_object = plt.contour(xx, yy, z, levels=[0.])
     h_object.ax.axis('equal')
     h_points = plt.scatter(dataset[:,0], dataset[:,1], s=2)
@@ -174,7 +193,7 @@ def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled
 def visualize2(model, data, resx=64, resy=64, 
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True, filled_contour=True, 
-                laplacian=True, func_eval=True, gradient=True,
+                laplacian=2, func_eval=True, gradient=True,
                 device='cpu'):
   xx, yy = grid_from_torch(data[:,0:2], resx, resy, device=device)
   z = nn_sampling(model, xx, yy, zz=None,
@@ -188,8 +207,8 @@ def visualize2(model, data, resx=64, resy=64,
 
   if gradient:
     plot_gradient(model, data[:,0:2])
-  if laplacian:
-    plot_laplacian(model, xx, yy)
+  if laplacian is not None:
+    plot_laplacian(model, xx, yy, p=laplacian)
   # if trimesh_comparison:
   #   print('model(x) vs d(x, triangle_mesh:', str(compare_trimesh(model, data[:,0:2], segments, data[:,-1].view(data.shape[0],1))))
 
@@ -199,7 +218,7 @@ def visualize2(model, data, resx=64, resy=64,
 def trimesh_visualize2(model, data, triangles, resx=64, resy=64, 
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True, filled_contour=True, 
-                additional=True, func_eval=True,
+                laplacian=2, func_eval=True,
                 device='cpu'):
   
   is_boundary = data[:,-1]==1
@@ -209,22 +228,31 @@ def trimesh_visualize2(model, data, triangles, resx=64, resy=64,
   
   z = model(points).flatten()
 
+  if scatter:
+    hp = plt.scatter(points[:,0].detach().cpu(), points[:,1].detach().cpu(), s=1)
+    ax = plt.gca()
+    ax.axis('equal')
+    plt.show()
+
   if surface:
     ht = plt.tricontour(data[:,0].detach().cpu(), data[:,1].detach().cpu(), triangles, z.detach().cpu(), levels=[0])
+    ht.ax.axis('equal')
     plt.show()
 
   if filled_contour:
     htf = plt.tricontourf(data[:,0].detach().cpu(), data[:,1].detach().cpu(), triangles, z.detach().cpu())
+    htf.ax.axis('equal')
     plt.colorbar(ticks=[z.min().item(), 0., z.max().item()])
     plt.show()
 
   if func_eval:
     ht = plt.tricontour(data[:,0].detach().cpu(), data[:,1].detach().cpu(), triangles, z.detach().cpu(), levels=[0])
+    ht.ax.axis('equal')
     plt.scatter(boundary_points[:,0].detach().cpu(), boundary_points[:,1].detach().cpu(), s=1)
     plt.show()
 
-  if additional:
-    lap = Utils.compute_laplacian(model(points), points, p=2).flatten()
+  if laplacian is not None:
+    lap = Utils.compute_laplacian(model(points), points, p=laplacian).flatten()
     plt.title('Laplacian')
     hltf = plt.tricontourf(data[:,0].detach().cpu(), data[:,1].detach().cpu(), triangles, lap.detach().cpu())
     plt.colorbar(ticks=[lap.min().item(), -1., 0., 1., lap.max().item()])
@@ -292,7 +320,7 @@ def plot3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=True)
 def visualize3(model, data, resx, resy, resz,
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True,
-                additional=True,
+                laplacian=2,
                 device='cpu'):
   xx, yy, zz = grid_from_torch(data, resx, resy, resz, device)
   z = nn_sampling(model, xx, yy, zz=zz,
@@ -303,8 +331,8 @@ def visualize3(model, data, resx, resy, resz,
         z.detach().cpu().numpy(), 
         scatter=scatter, vecfield=vecfield, surface=surface)
 
-  if additional == True:
-    plot_additional(model, xx, yy, zz)
+  if laplacian is not None:
+    plot_laplacian(model, xx, yy, zz, p=laplacian)
 
 #----------------------------------------------------------------------
 # GRID
