@@ -11,26 +11,22 @@ from modules import Visualization, Utils
 import matplotlib.pyplot as plt
 
 
-def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_output_path=None, device='cpu'):
+def train(num_epochs, model, optimizer, scheduler, data, dim, is_normal=False, batch_size=None, loss_output_path=None, device='cpu'):
   print('Setting up')
 
   # Define parameters
-  geo_coeff = 30.
+  geo_coeff = 50.
   # normal_coeff = 10.
   constraint_coeff = 1.
-  off_coeff = 0.5
+  off_coeff = 1.
 
-  if data.shape[1] == 3 or data.shape[1] == 2:
-    dim = 1
-    loss_checkpoint_freq = 100
-    plot_freq = 500
-  elif data.shape[1] == 5 or data.shape[1] == 4:
-    dim = 2
+  p = 4
+
+  if dim == 2:
     loss_checkpoint_freq = 100
     plot_freq = 500
   else:
-    dim = 3
-    loss_checkpoint_freq = 10
+    loss_checkpoint_freq = 50
 
   if batch_size is None:
     batch_size = data.shape[0]
@@ -40,6 +36,12 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
   # Get loss values and number of iteration in last training
   loss_value, start = Utils.load_loss_values(loss_output_path)
 
+  # xx, yy = Visualization.grid_from_torch(data[:,0:2], 32, 32, device=device)
+  # resx = xx.shape[0]
+  # resy = yy.shape[1]
+  # dimg = resx * resy
+  # distribution = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+  # distribution.requires_grad = True
 
 
   # Train network
@@ -52,14 +54,15 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
     for batch in batches:
 
       point_batch = batch[:,0:dim]
-      normal_batch = batch[:,dim:2*dim]
-      stddvt_batch = batch[:,2*dim].view(batch.shape[0],1)
+      if is_normal:
+        normal_batch = batch[:,dim:2*dim]
+      stddvt_batch = batch[:,-1].view(batch.shape[0],1)
 
       # Distribution
-      distribution = Utils.uniform_gaussian(point_batch, sample_ranges, stddvt_batch)
-      # distribution = Utils.uniform(sample_ranges, dim=dim, device=device)
+      # distribution = Utils.uniform_gaussian(point_batch, sample_ranges, stddvt_batch)
+      distribution = Utils.uniform(sample_ranges, dim=dim, device=device)
       # distribution = Utils.gaussian(point_batch, stddvt_batch)
-      # distribution = torch.cat((distribution, point_batch))
+      full_distribution = torch.cat((distribution, point_batch))
 
       model.train()
 
@@ -70,29 +73,33 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
 
       # Forward pass
       f_data = model(point_batch)
-      f_dist = model(distribution)
+      f_dist = model(full_distribution)
 
       # f(x)
       geo_loss = f_data.abs().mean()
 
       # grad(f)-normals
-      # normal_grad = Utils.compute_grad(f_data, point_batch)
-      # normal_loss = (normal_grad - normal_batch).norm(2, dim=1).mean()
-      # normal_loss = (1 - (F.cosine_similarity(normal_grad, normal_batch, dim=-1)).abs()).mean()
-      normal_loss = torch.tensor([0]).to(device)
+      if is_normal:
+        normal_grad = Utils.compute_grad(f_data, point_batch)
+        normal_loss = (normal_grad - normal_batch).norm(2, dim=1).mean()
+        normal_loss = (1 - (F.cosine_similarity(normal_grad, normal_batch, dim=-1)).abs()).mean()
+      else:
+        normal_loss = torch.tensor([0]).to(device)
 
       # Laplacian as constraint
-      constraint_grad = Utils.compute_laplacian(f_dist, distribution, p=10)
+      constraint_grad = Utils.compute_laplacian(f_dist, distribution, p=p)
       constraint = ((constraint_grad - 1).abs()).mean()
       
       # Off surface
       alpha = 100.0
-      off_surface = torch.exp(-alpha * f_dist.abs()).mean()
+      # off_surface_dist = Utils.uniform(sample_ranges, dim=dim, device=device)
+      off_surface = torch.exp(-alpha * model(distribution).abs()).mean()
+      # off_surface = torch.tensor([0]).to(device)
       
-      # loss = geo_coeff * geo_loss + constraint_coeff * constraint + off_coeff * off_surface
+      loss = geo_coeff * geo_loss + constraint_coeff * constraint + off_coeff * off_surface
       # loss = geo_coeff * geo_loss + normal_coeff * normal_loss + constraint_coeff * constraint + off_coeff * off_surface
       # loss = geo_coeff * geo_loss + normal_coeff * normal_loss + constraint_coeff * constraint
-      loss = geo_coeff * geo_loss + constraint_coeff * constraint + off_coeff * off_surface
+      # loss = geo_coeff * geo_loss + constraint_coeff * constraint
       
       loss.backward()
       optimizer.step()
@@ -112,9 +119,12 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
       Visualization.visualize2(model, data,
                                 scatter=False, vecfield=False,
                                 surface=False,
-                                additional=False,
+                                laplacian=None,
+                                gradient=False,
                                 device=device)
-
+      # plt.hist(constraint_grad.detach().cpu())
+      # plt.show()
+      
   # Draw figure for loss values
   Visualization.loss_graph(loss_value[:,0], loss_value[:,1:])
 
@@ -128,26 +138,25 @@ def train(num_epochs, model, optimizer, scheduler, data, batch_size=None, loss_o
 
 
 
-def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_size=None, loss_output_path=None, device='cpu'):
+def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, segments, dim, is_normal=False, batch_size=None, loss_output_path=None, device='cpu'):
   print('Setting up')
 
   # Define parameters
-  geo_coeff = 100.
+  geo_coeff = 30.
   normal_coeff = 0.
   constraint_coeff = 1.
   off_coeff = 1.
 
-  if data.shape[1] == 2:
-    dim = 1
+  p = 8                           # p-Laplacian
+
+  if dim == 1:
     loss_checkpoint_freq = 100
     plot_freq = 500
-  elif data.shape[1] == 3:
-    dim = 2
+  elif dim == 2:
     loss_checkpoint_freq = 100
     plot_freq = 500
   else:
-    dim = 3
-    loss_checkpoint_freq = 10
+    loss_checkpoint_freq = 50
     plot_freq = None
 
   if batch_size is None:
@@ -157,6 +166,15 @@ def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_s
   loss_value, start = Utils.load_loss_values(loss_output_path)
 
   sample_ranges = Utils.get_sample_ranges(data[:, 0:2])
+
+  # Get off surface points with d > close_distance
+  # points = data[:,0:2]
+  # poly_dists = torch.zeros((points.shape[0])).to(points.device)
+  # for i in range(points.shape[0]):
+  #   poly_dists[i] = Utils.dis_point2poly(points[i], data, segments)
+  # is_close = poly_dists<=close_distance
+  # is_close = is_close.view(points.shape[0],1)
+  # data = torch.cat((data, is_close), dim=-1)
 
 
 
@@ -173,6 +191,7 @@ def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_s
       points = batch[:,0:2]
       point_batch = points[is_boundary]
       distribution = points#[~is_boundary]
+      off_surface_distribution = points[~is_boundary]
 
       model.train()
       optimizer.zero_grad()
@@ -186,15 +205,17 @@ def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_s
 
       # f(x)
       geo_loss = f_data.abs().mean()
+
       normal_loss = torch.tensor([0]).to(device)
 
       # Laplacian as constraint
-      constraint_grad = Utils.compute_laplacian(f_dist, distribution, p=2)
+      constraint_grad = Utils.compute_laplacian(f_dist, distribution, p=p)
       constraint = ((constraint_grad - 1).abs()).mean()
 
       # Off surface
       alpha = 100.0
-      off_loss = torch.exp(-alpha * f_dist.abs()).mean()
+      off_loss = torch.exp(-alpha * model(off_surface_distribution).abs()).mean()
+      # off_loss = torch.tensor([0]).to(device)
 
       # loss = geo_coeff * geo_loss + constraint_coeff * constraint
       # loss = geo_coeff * geo_loss + off_coeff * off_loss
@@ -208,7 +229,7 @@ def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_s
 
     # Store loss values into numpy array
     if (i+1) % loss_checkpoint_freq == 0:
-      loss_value = np.append(loss_value, [[i+1, loss.item(), geo_loss.item(), normal_loss.item(), constraint.item()]], axis=0)
+      loss_value = np.append(loss_value, [[i+1, loss.item(), geo_loss.item(), normal_loss.item(), constraint.item(), off_loss.item()]], axis=0)
       print('Epoch:', i+1, '  Loss:', loss.item(), '  Learning rate:', optimizer.param_groups[0]["lr"])
       print('Surface loss:' , geo_loss.item(), '  Normal loss:', normal_loss.item(), '  Constraint:', constraint.item())
       print('Off-surface constraint: ', off_loss.item())
@@ -217,12 +238,12 @@ def train_mesh(num_epochs, model, optimizer, scheduler, data, triangles, batch_s
     if dim==2 and (i+1) % plot_freq == 0:
       Visualization.trimesh_visualize2(model, data, triangles,
                                       scatter=False, vecfield=False, surface=True, filled_contour=True, 
-                                      additional=False, func_eval=False,
+                                      laplacian=None, func_eval=False,
                                       device=device)
 
 
   # Draw figure for loss values
-  Visualization.loss_graph(loss_value[:,0], loss_value[:,-4:])
+  Visualization.loss_graph(loss_value[:,0], loss_value[:,1:])
 
   # Save numpy array of loss values
   if loss_output_path is not None:
