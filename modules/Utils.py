@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as f
 import random
 from scipy.spatial import KDTree
+import matplotlib.pyplot as plt
 from modules import Visualization
 
 #--------------------------------------------------------------------
@@ -140,6 +141,31 @@ def read_mesh2(filename, rescale=None, device='cpu'):
 
   return data
 
+def read_mesh2_boundary_only(filename, k_distance=None, rescale=None, device='cpu'):
+  with open(filename, 'r') as f:
+    line1 = np.loadtxt(f, max_rows=1)
+
+    raw_data = np.loadtxt(f)
+    full_vertices = raw_data[:,[1,2]]
+    is_boundary = raw_data[:,-1]==1
+    vertices = full_vertices[is_boundary]
+
+    if rescale is not None:
+      d_mean = vertices.mean(axis=0)
+      vertices = (vertices - d_mean)# * 10
+      vertices = rescale * vertices / np.max(np.abs(vertices))
+
+    data = torch.from_numpy(vertices).float().to(device)
+    data.requires_grad = True
+
+    if k_distance is not None:
+      stddvt = find_kth_closest_d(data, k_distance)
+      data = torch.cat((data,stddvt), dim=-1)
+
+    print(data.shape)
+
+  return data
+
 def read_triangle(filename, device='cpu'):
   with open(filename, 'r') as f:
     line1 = np.loadtxt(f, max_rows=1)
@@ -168,11 +194,10 @@ def read_poly(filename, device='cpu'):
 
 
 # Sample points on a circle
-def circle_dataset(k_distance=None, device='cpu'):
+def circle_dataset(radius=1.0, k_distance=None, device='cpu'):
 	# Points
   num_on_points = 100
   num_points = 3 * num_on_points
-  radius = 1.0
   thetas = np.arange(0.0, 2.0*np.pi, 2.0*np.pi/float(num_on_points))
   d = np.zeros((num_on_points,2))
   d[:,0] = radius*np.cos(thetas)
@@ -197,6 +222,29 @@ def circle_dataset(k_distance=None, device='cpu'):
   
   return data
 
+
+def annulus_dataset(radiuses=[1.0, 2.0], k_distance=None, device='cpu'):
+  with torch.no_grad():
+    radiuses.sort()
+    if len(radiuses) % 2 == 0:
+      reverse_normal = True
+    else:
+      reverse_normal = False
+    data = torch.zeros(0,4).to(device)
+    for r in radiuses:
+      c = circle_dataset(radius=r, k_distance=None, device=device)
+      if reverse_normal:
+        c[:,-2:] = -c[:,-2:]
+      reverse_normal = not reverse_normal
+      data = torch.cat((data,c))
+  
+  if k_distance is not None:
+    stddvt = find_kth_closest_d(data, k_distance)
+    data = torch.cat((data,stddvt), dim=-1)
+
+  data.requires_grad = True
+
+  return data
 
 
 # 3D
@@ -293,6 +341,7 @@ def compute_grad(outputs, inputs):
 
 def compute_laplacian(outputs, inputs, p=2):
   g = compute_grad(outputs, inputs)
+  g = ((g.norm(2, dim=-1).view(g.shape[0],1))**(p-2))  * g
 
   div = 0.
   for i in range(g.shape[-1]):
@@ -348,8 +397,8 @@ def uniform(sample_ranges, dim=3, device='cpu'):
   dy = sample_ranges[3]-sample_ranges[2]
 
   if dim == 2:
-    dist_size = 2 * dx * dy
-    dist_size = int(torch.min(torch.ceil(dist_size), torch.tensor([200]).to(device)))
+    dist_size = 16 * dx * dy
+    dist_size = int(torch.max(torch.ceil(dist_size), torch.tensor([200]).to(device)))
     
     u_x = torch.FloatTensor(dist_size, 1).uniform_(sample_ranges[0], sample_ranges[1])
     u_y = torch.FloatTensor(dist_size, 1).uniform_(sample_ranges[2], sample_ranges[3])
@@ -358,7 +407,7 @@ def uniform(sample_ranges, dim=3, device='cpu'):
   else:
     dz = sample_ranges[5]-sample_ranges[4]
     dist_size= dx * dy * dz
-    dist_size = int(dist_size.ceil())
+    dist_size = int(torch.max(torch.ceil(dist_size), torch.tensor([2048]).to(device)))
     
     u_x = torch.FloatTensor(dist_size, 1).uniform_(sample_ranges[0], sample_ranges[1])
     u_y = torch.FloatTensor(dist_size, 1).uniform_(sample_ranges[2], sample_ranges[3])
@@ -396,7 +445,7 @@ def uniform_gaussian(points, sample_ranges, stddvt):
 #-----------------------------------------------------
 #Distance to polygon
 def dis_point2poly(p, nodes, segments):
-  d = torch.tensor([float("inf")])
+  d = torch.tensor([float("inf")]).to(p.device)
   dim = p.shape[0]
   
   for segment in segments:
