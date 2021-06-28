@@ -193,7 +193,7 @@ def plot2(dataset, normal_vectors, xx, yy, z, scatter, vecfield, surface, filled
 def visualize2(model, data, resx=64, resy=64, 
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True, filled_contour=True, 
-                laplacian=2, func_eval=True, gradient=True,
+                laplacian=None, func_eval=True, gradient=True,
                 device='cpu'):
   xx, yy = grid_from_torch(data[:,0:2], resx, resy, device=device)
   z = nn_sampling(model, xx, yy, zz=None,
@@ -218,7 +218,7 @@ def visualize2(model, data, resx=64, resy=64,
 def trimesh_visualize2(model, data, triangles, resx=64, resy=64, 
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True, filled_contour=True, 
-                laplacian=2, func_eval=True,
+                laplacian=None, func_eval=True,
                 device='cpu'):
   
   is_boundary = data[:,-1]==1
@@ -320,13 +320,18 @@ def plot3(dataset, normal_vectors, z, scatter=True, vecfield=True, surface=True)
 def visualize3(model, data, resx, resy, resz,
                 constraint_output_path=None, vtk_output_path=None,
                 scatter=True, vecfield=True, surface=True,
-                laplacian=2,
+                laplacian=None,
                 device='cpu'):
   xx, yy, zz = grid_from_torch(data, resx, resy, resz, device)
   z = nn_sampling(model, xx, yy, zz=zz,
                   constraint_output_path=constraint_output_path,
                   vtk_output_path = vtk_output_path,
                   device=device)
+                  
+  del xx
+  del yy
+  del zz
+
   plot3(data[:,0:3].detach().cpu().numpy(), data[:,3:6].detach().cpu().numpy(), 
         z.detach().cpu().numpy(), 
         scatter=scatter, vecfield=vecfield, surface=surface)
@@ -365,6 +370,7 @@ def grid_from_torch(points, resx=32, resy=32, resz=32, device='cpu'):
     dz = zmax - zmin
 
     ed = 0.04 * math.sqrt(dx*dx + dy*dy + dz*dz)
+    # ed = 0.01
 
     x = torch.arange(xmin-ed, xmax+ed, step=(dx+2*ed)/float(resx))
     y = torch.arange(ymin-ed, ymax+ed, step=(dy+2*ed)/float(resy))
@@ -381,26 +387,49 @@ def grid_from_torch(points, resx=32, resy=32, resz=32, device='cpu'):
 
 # Neural Network as function
 def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output_path=None, device='cpu'):
-  # Evaluate function on each grid point
-  resx = xx.shape[0]
-  resy = yy.shape[1]
-  if zz is None:
-    resz = 1
-    dimg = resx * resy
-    tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
-  else:
-    resz = zz.shape[2]
-    dimg = resx * resy * resz
-    tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
-  
-  z = model(tt)
+  with torch.no_grad():
+      # Evaluate function on each grid point
+      resx = xx.shape[0]
+      resy = yy.shape[1]
+      if zz is None:
+        resz = 1
+        dimg = resx * resy
+        tt = torch.stack((xx, yy), dim=-1).reshape(dimg,2)
+      else:
+        resz = zz.shape[2]
+        dimg = resx * resy * resz
+        tt = torch.stack((xx, yy, zz), dim=-1).reshape(dimg,3)
 
+        del xx
+        del yy
+        del zz
 
+      with open(vtk_output_path, 'w') as f:
+        f.write('# vtk DataFile Version 3.0\n')
+        f.write('vtk output\n')
+        f.write('ASCII\n')
+        f.write('DATASET STRUCTURED_GRID\n')
+        f.write('DIMENSIONS ' + str(resx) + ' ' + str(resy) + ' ' + str(resz) +'\n')
+        f.write('POINTS ' + str(resx*resy*resz) + ' double\n')
+        np.savetxt(f, tt.detach().cpu().numpy())
+        f.write('\n\n')
+        f.write('POINT_DATA ' + str(resx*resy*resz) + '\n')
+        f.write('SCALARS ' + 'DENSITY' + ' double' + '\n')
+        f.write('LOOKUP_TABLE default\n')
 
-  # Save z value
-  if vtk_output_path is not None:
-    Utils.save_vtk(vtk_output_path, tt, resx, resy, resz, z)
-    print("VTK file saved")
+        tt_batches = torch.utils.data.DataLoader(tt, batch_size=4096, shuffle=False)
+        z = torch.zeros(0,1)
+        for tt_batch in tt_batches:
+          z_batch = model(tt_batch)
+          np.savetxt(f, z_batch.detach().cpu().numpy())
+          z = torch.cat((z, z_batch))
+        f.write('\n')
+
+  # # Save z value
+  # if vtk_output_path is not None:
+  #   Utils.save_vtk(vtk_output_path, tt, resx, resy, resz, z)
+  #   print("VTK file saved")
+  # print('sample3')
 
   if constraint_output_path is not None:
     # Compute grad on each grid point
@@ -409,8 +438,7 @@ def nn_sampling(model, xx, yy, zz=None, vtk_output_path=None, constraint_output_
     np.savetxt(g_norm_output_path, g.detach().cpu())
     print("Norm of gradient saved")
 
-
-  if zz is None:
+  if resz == 1:
     z = torch.reshape(z, (resx,resy))
   else: 
     z = torch.reshape(z, (resx,resy, resz))
